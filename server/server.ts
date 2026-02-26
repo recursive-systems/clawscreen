@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { canonicalToCompatiblePayload, toCanonicalEnvelope } from '../shared/a2ui.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -116,7 +117,9 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
       const parsed = tryParseJson(candidate);
       if (!parsed) continue;
 
-      const normalized = normalizeA2uiPayload(parsed as Record<string, unknown>, prompt);
+      // Trust boundary: model output is coerced into canonical messages before any rendering shape is used.
+      const envelope = toCanonicalEnvelope(parsed);
+      const normalized = normalizeA2uiPayload(canonicalToCompatiblePayload(envelope), prompt);
       const issues = getRenderableIssues(normalized);
       if (!issues.length) return normalized;
 

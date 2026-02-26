@@ -1,4 +1,11 @@
 import './styles.css';
+import {
+  A2UIBlock,
+  A2UICanonicalEnvelope,
+  A2UICompatiblePayload,
+  canonicalToCompatiblePayload,
+  toCanonicalEnvelope
+} from '../shared/a2ui';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
@@ -8,43 +15,6 @@ const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 
 type Primitive = string | number | boolean | null | undefined;
 type Json = Primitive | Json[] | { [key: string]: Json };
-
-type A2UIBlock = {
-  type?: string;
-  title?: string;
-  label?: string;
-  text?: string;
-  body?: string;
-  content?: Json;
-  value?: Json;
-  number?: Json;
-  metric?: Json;
-  delta?: string;
-  items?: Json[];
-  values?: Json[];
-  children?: Json[];
-  [key: string]: Json;
-};
-
-type A2UIScreen = {
-  title?: string;
-  subtitle?: string;
-  name?: string;
-  blocks?: A2UIBlock[];
-  children?: A2UIBlock[];
-  content?: A2UIBlock[];
-  items?: A2UIBlock[];
-  [key: string]: Json;
-};
-
-type A2UIPayload = {
-  version?: string;
-  screen?: A2UIScreen;
-  payload?: Json;
-  a2ui?: Json;
-  ops?: Array<{ value?: A2UIScreen }>;
-  [key: string]: Json;
-};
 
 const els = {
   app: document.getElementById('app') as HTMLElement,
@@ -64,13 +34,13 @@ const els = {
   rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement
 };
 
-const state: { lastPrompt: string; lastPayload: A2UIPayload | null; lastError: Error | null } = {
+const state: { lastPrompt: string; lastPayload: A2UICompatiblePayload | null; lastError: Error | null } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
   lastError: null
 };
 
-const offlineFallbackPayload: A2UIPayload = {
+const offlineFallbackPayload: A2UICompatiblePayload = {
   version: '0.8',
   screen: {
     title: 'Offline Dev Fallback',
@@ -94,7 +64,7 @@ const offlineFallbackPayload: A2UIPayload = {
   }
 };
 
-function heuristicPayloadFromPrompt(prompt: string): A2UIPayload {
+function heuristicPayloadFromPrompt(prompt: string): A2UICompatiblePayload {
   const p = String(prompt || '').trim();
   const lower = p.toLowerCase();
   const blocks: A2UIBlock[] = [];
@@ -164,12 +134,12 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
-const persistLkg = (payload: A2UIPayload) => localStorage.setItem(A2UI_STORAGE_KEY, JSON.stringify(payload));
+const persistLkg = (payload: A2UICompatiblePayload) => localStorage.setItem(A2UI_STORAGE_KEY, JSON.stringify(payload));
 
-function loadLkg(): A2UIPayload | null {
+function loadLkg(): A2UICompatiblePayload | null {
   try {
     const raw = localStorage.getItem(A2UI_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as A2UIPayload) : null;
+    return raw ? (JSON.parse(raw) as A2UICompatiblePayload) : null;
   } catch {
     return null;
   }
@@ -193,28 +163,26 @@ function parseJsonLines(text: string): unknown[] | null {
   return objects.length ? objects : null;
 }
 
-function normalizeA2uiPayload(raw: unknown): A2UIPayload {
-  const r = raw as A2UIPayload;
-  const payload = (r?.a2ui ?? r?.payload ?? r) as any;
-  if (payload == null) throw new Error('Empty A2UI payload');
+function normalizeA2uiPayload(raw: unknown): { envelope: A2UICanonicalEnvelope; payload: A2UICompatiblePayload } {
+  if (raw == null) throw new Error('Empty A2UI payload');
 
-  if (typeof payload === 'string') {
-    const asJson = tryParseJson(payload);
-    if (asJson) return normalizeA2uiPayload(asJson);
-    const asJsonl = parseJsonLines(payload);
-    if (asJsonl) return { version: '0.8', screen: { title: 'A2UI Stream', blocks: asJsonl as A2UIBlock[] } };
-    throw new Error('Unparseable A2UI string payload');
+  let normalizedRaw: unknown = raw;
+  if (typeof normalizedRaw === 'string') {
+    const asJson = tryParseJson(normalizedRaw);
+    if (asJson) normalizedRaw = asJson;
+    else {
+      const asJsonl = parseJsonLines(normalizedRaw);
+      if (!asJsonl) throw new Error('Unparseable A2UI string payload');
+      normalizedRaw = { version: '0.8', screen: { title: 'A2UI Stream', blocks: asJsonl as A2UIBlock[] } };
+    }
+  } else if (Array.isArray(normalizedRaw)) {
+    normalizedRaw = { version: '0.8', screen: { title: 'A2UI Output', blocks: normalizedRaw as A2UIBlock[] } };
   }
 
-  if (Array.isArray(payload)) return { version: '0.8', screen: { title: 'A2UI Output', blocks: payload as A2UIBlock[] } };
-  if (Array.isArray(payload.ops)) {
-    const setScreen = payload.ops.find((op: any) => op?.value?.blocks || op?.value?.children || op?.value?.content);
-    if (setScreen) return { version: payload.version || '0.8', screen: setScreen.value };
-  }
-  if (payload.screen) return { version: payload.version || '0.8', screen: payload.screen };
-  if (payload.blocks || payload.children || payload.content) return { version: payload.version || '0.8', screen: payload };
-
-  return { version: payload.version || '0.8', screen: { title: payload.title || 'A2UI Output', blocks: [payload] } };
+  // Trust boundary: all network payload variants are coerced into canonical messages first.
+  const envelope = toCanonicalEnvelope(normalizedRaw);
+  const payload = canonicalToCompatiblePayload(envelope);
+  return { envelope, payload };
 }
 
 function withTimeout<T>(ms: number, promise: Promise<T>): Promise<T> {
@@ -305,10 +273,10 @@ function renderNode(node: unknown): string {
 
 function renderA2ui(payload: unknown, source: string) {
   const normalized = normalizeA2uiPayload(payload);
-  if (!isSafePayload(normalized)) throw new Error('Payload failed safety checks');
+  if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
 
   setUiState('rendering', 'Rendering A2UI…');
-  const screen = normalized.screen || {};
+  const screen = normalized.payload.screen || {};
   const title = screen.title || screen.name || 'Dynamic Screen';
   const subtitle = screen.subtitle || `Generated from prompt at ${new Date().toLocaleTimeString()}`;
 
@@ -326,8 +294,9 @@ function renderA2ui(payload: unknown, source: string) {
     els.renderSurface.appendChild(article);
   });
 
-  state.lastPayload = normalized;
-  persistLkg(normalized);
+  // Compatibility adapter output remains the rendering contract in phase 1.
+  state.lastPayload = normalized.payload;
+  persistLkg(normalized.payload);
   setUiState('ready', `Rendered ${nodesToRender.length} block(s) from ${source} (${APP_VERSION})`);
 }
 
