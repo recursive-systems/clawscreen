@@ -69,6 +69,9 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
 
   for (let genAttempt = 1; genAttempt <= 2; genAttempt += 1) {
     const strictPrompt = [
+      'You are generating a ClawScreen A2UI response.',
+      'If the request needs live external/personal data (calendar, email, tasks, weather, files, etc.), use available OpenClaw tools first, then answer from tool results.',
+      'Prefer freshness over guessing. Do not fabricate missing data.',
       'Return STRICT JSON only. No markdown. No prose.',
       'Output exactly one object with this shape:',
       '{"version":"0.8","screen":{"title":string,"subtitle":string,"blocks":Block[]}}',
@@ -78,6 +81,7 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
       '- list: must include at least one item',
       '- metric: must include value',
       '- card/notes/text: must include non-empty text/body/content',
+      'If data is unavailable after attempting tools, state that clearly in a block and include the exact missing source.',
       'Keep response concise and dashboard-oriented.',
       feedback ? `Retry feedback: ${feedback}` : '',
       '',
