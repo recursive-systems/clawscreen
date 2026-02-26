@@ -14,6 +14,11 @@ test('toTrustedComponentType maps canonical and alias values', () => {
   assert.equal(toTrustedComponentType('panel'), 'card');
   assert.equal(toTrustedComponentType('note'), 'notes');
   assert.equal(toTrustedComponentType('hr'), 'divider');
+  assert.equal(toTrustedComponentType('img'), 'image');
+  assert.equal(toTrustedComponentType('glyph'), 'icon');
+  assert.equal(toTrustedComponentType('hstack'), 'row');
+  assert.equal(toTrustedComponentType('col'), 'column');
+  assert.equal(toTrustedComponentType('group'), 'section');
 });
 
 test('toTrustedComponentType normalizes casing and unknownish inputs', () => {
@@ -32,6 +37,8 @@ test('coerceTrustedComponentType returns fallback for unknown values', () => {
 test('isTrustedComponentType only accepts canonical values', () => {
   assert.equal(isTrustedComponentType('text'), true);
   assert.equal(isTrustedComponentType('divider'), true);
+  assert.equal(isTrustedComponentType('image'), true);
+  assert.equal(isTrustedComponentType('section'), true);
   assert.equal(isTrustedComponentType('markdown'), false);
   assert.equal(isTrustedComponentType('unknown'), false);
 });

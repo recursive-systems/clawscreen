@@ -111,3 +111,12 @@ test('normalization ignores unsafe/unexpected nested message shapes', () => {
   assert.deepEqual(state.model, { safe: true });
   assert.equal(state.screen, undefined);
 });
+
+test('new display/layout fixture types survive canonical normalization', () => {
+  const envelope = toCanonicalEnvelope(loadFixture('a2ui-valid/layout-display-types.json'));
+  const state = applyCanonicalMessages(envelope.messages, createInitialRenderState(envelope.version));
+  const blocks = state.screen?.blocks || [];
+  const blockTypes = blocks.map((block) => block.type);
+
+  assert.deepEqual(blockTypes, ['section', 'row', 'column']);
+});

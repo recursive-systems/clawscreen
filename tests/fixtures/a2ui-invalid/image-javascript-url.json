@@ -1,0 +1,13 @@
+{
+  "version": "0.8",
+  "screen": {
+    "title": "Unsafe image",
+    "blocks": [
+      {
+        "type": "image",
+        "src": "javascript:alert('xss')",
+        "caption": "must be rejected"
+      }
+    ]
+  }
+}

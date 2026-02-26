@@ -1,4 +1,16 @@
-export const TRUSTED_COMPONENT_TYPES = ['text', 'list', 'metric', 'card', 'notes', 'divider'] as const;
+export const TRUSTED_COMPONENT_TYPES = [
+  'text',
+  'list',
+  'metric',
+  'card',
+  'notes',
+  'divider',
+  'image',
+  'icon',
+  'row',
+  'column',
+  'section'
+] as const;
 
 export type TrustedComponentType = (typeof TRUSTED_COMPONENT_TYPES)[number];
 export type TrustedComponentOrUnknown = TrustedComponentType | 'unknown';
@@ -18,7 +30,19 @@ const TYPE_ALIAS_MAP: Record<string, TrustedComponentType> = {
   notes: 'notes',
   note: 'notes',
   divider: 'divider',
-  hr: 'divider'
+  hr: 'divider',
+  image: 'image',
+  img: 'image',
+  photo: 'image',
+  icon: 'icon',
+  glyph: 'icon',
+  row: 'row',
+  hstack: 'row',
+  column: 'column',
+  col: 'column',
+  vstack: 'column',
+  section: 'section',
+  group: 'section'
 };
 
 export function isTrustedComponentType(value: string): value is TrustedComponentType {

@@ -1,0 +1,31 @@
+{
+  "version": "0.8",
+  "screen": {
+    "title": "Display Types",
+    "blocks": [
+      {
+        "type": "section",
+        "title": "Overview",
+        "body": "Phase A preview",
+        "children": [
+          { "type": "icon", "icon": "status-ok" },
+          { "type": "image", "src": "https://example.com/image.jpg", "alt": "Example", "caption": "Safe remote image" }
+        ]
+      },
+      {
+        "type": "row",
+        "children": [
+          { "type": "text", "text": "Left" },
+          { "type": "text", "text": "Right" }
+        ]
+      },
+      {
+        "type": "column",
+        "children": [
+          { "type": "notes", "body": "First" },
+          { "type": "notes", "body": "Second" }
+        ]
+      }
+    ]
+  }
+}

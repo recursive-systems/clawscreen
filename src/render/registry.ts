@@ -17,7 +17,15 @@ const RESERVED_KEYS = new Set([
   'values',
   'metric',
   'number',
-  'delta'
+  'delta',
+  'icon',
+  'token',
+  'alt',
+  'caption',
+  'url',
+  'src',
+  'image',
+  'href'
 ]);
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => (Array.isArray(value) ? value : value == null ? [] : [value]);
@@ -35,6 +43,31 @@ function renderPrimitive(value: unknown): string {
   if (value == null) return '<span class="muted">—</span>';
   if (['string', 'number', 'boolean'].includes(typeof value)) return escapeHtml(value);
   return `<pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .trim();
+}
+
+function sanitizeUrl(value: unknown): string | null {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+
+  const compact = raw.replace(/\s+/g, '');
+  if (/^(javascript|data):/i.test(compact)) return null;
+
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(raw)) {
+    try {
+      const protocol = new URL(raw).protocol.toLowerCase();
+      if (protocol !== 'http:' && protocol !== 'https:') return null;
+    } catch {
+      return null;
+    }
+  }
+
+  return raw;
 }
 
 function renderKeyValueTable(obj: Record<string, unknown>): string {
@@ -71,11 +104,41 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
   },
   card: (node) => renderGenericSection(node, 'type-card'),
   notes: (node) => renderGenericSection(node, 'type-notes'),
-  divider: () => '<hr class="divider" />'
+  divider: () => '<hr class="divider" />',
+  image: (node) => {
+    const src = sanitizeUrl(node.src || node.url || node.image || node.href || node.value || node.content);
+    if (!src) return `<section class="generic-block type-image"><p class="muted">Image unavailable</p></section>`;
+
+    const alt = normalizeText(node.alt || node.label || node.title);
+    const caption = normalizeText(node.caption || node.text || node.body);
+    return `<figure class="generic-block type-image"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" referrerpolicy="no-referrer" />${caption ? `<figcaption class="muted">${escapeHtml(caption)}</figcaption>` : ''}</figure>`;
+  },
+  icon: (node) => {
+    const token = normalizeText(node.icon || node.token || node.value || node.text || node.label || node.title) || 'icon';
+    return `<section class="generic-block type-icon"><p><span class="chip">${escapeHtml(token)}</span></p></section>`;
+  },
+  row: (node) => {
+    const children = normalizeChildren(node);
+    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+    return `<section class="generic-block type-row">${childHtml}</section>`;
+  },
+  column: (node) => {
+    const children = normalizeChildren(node);
+    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+    return `<section class="generic-block type-column">${childHtml}</section>`;
+  },
+  section: (node) => {
+    const title = node.title || node.label || null;
+    const body = normalizeText(node.body || node.text || node.content || node.value);
+    const children = normalizeChildren(node);
+    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+    return `<section class="generic-block type-section">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${body ? `<p>${escapeHtml(body)}</p>` : ''}${childHtml}</section>`;
+  }
 };
 
 function renderUnsupported(node: A2UIBlock): string {
-  return renderGenericSection(node, 'type-unsupported');
+  const type = normalizeText(node.type || node.kind || node.component || 'unknown');
+  return `<section class="generic-block type-unsupported"><p class="muted">Unsupported component type: ${escapeHtml(type || 'unknown')}</p></section>`;
 }
 
 export function renderNode(node: unknown): string {

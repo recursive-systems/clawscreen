@@ -7,6 +7,14 @@ export type A2UIBlock = {
   label?: string;
   text?: string;
   body?: string;
+  icon?: string;
+  token?: string;
+  alt?: string;
+  caption?: string;
+  url?: string;
+  src?: string;
+  image?: string;
+  href?: string;
   content?: JsonValue;
   value?: JsonValue;
   number?: JsonValue;
