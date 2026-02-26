@@ -1,7 +1,24 @@
 import { A2UIBlock } from '../../shared/a2ui';
 import { TrustedComponentType, toTrustedComponentType } from '../../shared/trustedComponents';
 
-const RESERVED_KEYS = new Set(['type', 'kind', 'component', 'title', 'label', 'children', 'blocks', 'items', 'content', 'body']);
+const RESERVED_KEYS = new Set([
+  'type',
+  'kind',
+  'component',
+  'title',
+  'label',
+  'children',
+  'blocks',
+  'items',
+  'content',
+  'body',
+  'text',
+  'value',
+  'values',
+  'metric',
+  'number',
+  'delta'
+]);
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => (Array.isArray(value) ? value : value == null ? [] : [value]);
 
@@ -32,11 +49,13 @@ function normalizeChildren(node: A2UIBlock): unknown[] {
 
 function renderGenericSection(node: A2UIBlock, typeClass: string): string {
   const title = node.title || node.label || null;
+  const primaryText = node.text || node.body || node.content || node.value;
   const children = normalizeChildren(node);
   const details = Object.fromEntries(Object.entries(node).filter(([k]) => !RESERVED_KEYS.has(k)));
   const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+  const bodyHtml = primaryText ? `<p>${renderPrimitive(primaryText)}</p>` : '';
   const detailsHtml = Object.keys(details).length ? renderKeyValueTable(details) : '';
-  return `<section class="generic-block ${typeClass}">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${childHtml}${detailsHtml}</section>`;
+  return `<section class="generic-block ${typeClass}">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${bodyHtml}${childHtml}${detailsHtml}</section>`;
 }
 
 type BlockRenderer = (node: A2UIBlock) => string;
