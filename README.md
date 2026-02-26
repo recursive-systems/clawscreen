@@ -1,4 +1,4 @@
-# Family HUD — A2UI Prompt-to-Screen v1
+# ClawScreen — A2UI Prompt-to-Screen v1
 
 This prototype now uses an **OpenClaw-native backend bridge** (no direct OpenAI key required):
 
@@ -40,14 +40,15 @@ This prototype now uses an **OpenClaw-native backend bridge** (no direct OpenAI 
 - `OPENCLAW_GATEWAY_URL` (optional override; example: `ws://127.0.0.1:18789`)
 - `OPENCLAW_GATEWAY_TOKEN` (optional override; uses local config if unset)
 - `OPENCLAW_AGENT_ID` (default: `main`)
-- `OPENCLAW_GATEWAY_SESSION_KEY` (default: `agent:<agentId>:family-hud-a2ui`)
+- `OPENCLAW_GATEWAY_SESSION_KEY` (default: `agent:<agentId>:clawscreen-a2ui`)
 - `OPENCLAW_GATEWAY_RPC_TIMEOUT_MS` (default: `30000`)
 - `OPENCLAW_GATEWAY_RESPONSE_TIMEOUT_MS` (default: `45000`)
 
 ## Install
 
 ```bash
-cd /Users/bradleygolden/.openclaw/workspace-product/family-hud-v1
+git clone https://github.com/recursive-systems/clawscreen.git
+cd clawscreen
 npm install
 ```
 
@@ -175,7 +176,7 @@ If using non-default agent, set both consistently:
 
 ```bash
 export OPENCLAW_AGENT_ID=product
-export OPENCLAW_GATEWAY_SESSION_KEY=agent:product:family-hud-a2ui
+export OPENCLAW_GATEWAY_SESSION_KEY=agent:product:clawscreen-a2ui
 npm run start:backend
 ```
 

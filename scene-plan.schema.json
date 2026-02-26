@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://family-hud.local/scene-plan.schema.json",
-  "title": "Family HUD Scene Plan v1",
+  "$id": "https://clawscreen.local/scene-plan.schema.json",
+  "title": "ClawScreen Scene Plan v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

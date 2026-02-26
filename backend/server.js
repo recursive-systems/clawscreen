@@ -19,7 +19,7 @@ const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || '';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 const GATEWAY_AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
 const GATEWAY_SESSION_KEY =
-  process.env.OPENCLAW_GATEWAY_SESSION_KEY || `agent:${GATEWAY_AGENT_ID}:family-hud-a2ui`;
+  process.env.OPENCLAW_GATEWAY_SESSION_KEY || `agent:${GATEWAY_AGENT_ID}:clawscreen-a2ui`;
 const GATEWAY_RPC_TIMEOUT_MS = Number(process.env.OPENCLAW_GATEWAY_RPC_TIMEOUT_MS || 30000);
 const GATEWAY_RESPONSE_TIMEOUT_MS = Number(process.env.OPENCLAW_GATEWAY_RESPONSE_TIMEOUT_MS || 45000);
 
@@ -38,7 +38,7 @@ app.use(
 app.get('/healthz', (_req, res) => {
   res.json({
     ok: true,
-    service: 'family-hud-a2ui-bridge',
+    service: 'clawscreen-a2ui-bridge',
     provider: 'openclaw-gateway',
     gatewaySessionKey: GATEWAY_SESSION_KEY
   });
@@ -113,7 +113,7 @@ async function generateViaOpenClawGateway({ prompt, context }) {
       .filter(Boolean)
       .join('\\n');
 
-    const idempotencyKey = `family-hud-${randomUUID()}`;
+    const idempotencyKey = `clawscreen-${randomUUID()}`;
 
     const baseline = await safeHistoryFetch();
     const baselineLength = Array.isArray(baseline?.messages) ? baseline.messages.length : 0;

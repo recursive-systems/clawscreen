@@ -1,4 +1,4 @@
-# Acceptance Checklist — Family HUD v1
+# Acceptance Checklist — ClawScreen v1
 
 ## A) Local Host Dev Validation
 - [ ] `python3 -m http.server 8080` serves HUD locally.

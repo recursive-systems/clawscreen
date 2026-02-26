@@ -8,7 +8,7 @@ const A2UI_ENDPOINT_CANDIDATES = [
 ];
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
-const A2UI_STORAGE_KEY = 'familyHud.lastKnownGoodA2UI.v1';
+const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 
 const DEMO_PROMPTS = [
   'Give me a calm morning command center with only top priorities.',

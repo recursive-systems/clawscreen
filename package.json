@@ -1,8 +1,14 @@
 {
-  "name": "family-hud-v1",
+  "name": "clawscreen",
   "version": "1.0.0",
-  "private": true,
+  "description": "ClawScreen: an OpenClaw-native A2UI prompt-to-screen HUD prototype",
+  "license": "MIT",
+  "private": false,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/recursive-systems/clawscreen.git"
+  },
   "scripts": {
     "start:backend": "node backend/server.js",
     "start:frontend": "node backend/static-server.js",
