@@ -228,21 +228,39 @@ async function generateA2ui(prompt: string): Promise<unknown> {
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => (Array.isArray(value) ? value : value == null ? [] : [value]);
 
+function getNodeSizeClass(node: unknown): string {
+  if (!node || typeof node !== 'object') return 'size-large';
+  const candidate = (node as { size?: string }).size;
+  if (candidate === 'small') return 'size-small';
+  if (candidate === 'medium') return 'size-medium';
+  return 'size-large';
+}
+
 function syncRenderSurface(nodesToRender: unknown[]) {
   const existing = Array.from(els.renderSurface.children) as HTMLElement[];
 
   nodesToRender.forEach((node, index) => {
     const html = renderNode(node);
     const current = existing[index];
+    const sizeClass = getNodeSizeClass(node);
 
     if (!current) {
       const article = document.createElement('article');
-      article.className = 'scene-card size-large';
+      article.className = `scene-card ${sizeClass}`;
+      if (node && typeof node === 'object' && 'type' in node) {
+        article.dataset.blockType = String((node as { type?: unknown }).type || 'unknown');
+      }
       article.innerHTML = html;
       els.renderSurface.appendChild(article);
       return;
     }
 
+    current.className = `scene-card ${sizeClass}`;
+    if (node && typeof node === 'object' && 'type' in node) {
+      current.dataset.blockType = String((node as { type?: unknown }).type || 'unknown');
+    } else {
+      delete current.dataset.blockType;
+    }
     if (current.innerHTML !== html) current.innerHTML = html;
   });
 
