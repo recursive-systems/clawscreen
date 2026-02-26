@@ -10,13 +10,6 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
 const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 
-const DEMO_PROMPTS = [
-  'Give me a calm morning command center with only top priorities.',
-  'Show me everything I need before leaving in 20 minutes.',
-  'I’m stressed. Simplify my day into 3 actions.',
-  'Family evening mode: dinner, pickups, tomorrow prep.',
-  'Show a concise executive dashboard for today.'
-];
 
 const els = {
   app: document.getElementById('app'),
@@ -29,8 +22,7 @@ const els = {
   promptInput: document.getElementById('promptInput'),
   submitBtn: document.getElementById('generateBtn'),
   retryBtn: document.getElementById('retryBtn'),
-  demoSelect: document.getElementById('demoIntentSelect'),
-  demoRunBtn: document.getElementById('useDemoIntentBtn'),
+
   renderSurface: document.getElementById('sceneCards'),
   rawDialog: document.getElementById('rawSceneDialog'),
   rawOutput: document.getElementById('rawSceneOutput'),
@@ -39,7 +31,7 @@ const els = {
 };
 
 const state = {
-  lastPrompt: DEMO_PROMPTS[0],
+  lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
   lastError: null
 };
@@ -60,7 +52,7 @@ const offlineFallbackPayload = {
         title: 'Next checks',
         items: [
           'Verify OpenClaw Gateway route for A2UI generation',
-          'Submit any demo prompt to confirm dynamic payload changes',
+          'Submit a prompt to confirm dynamic payload changes',
           'Use “Show Raw” to inspect returned payload'
         ]
       }
@@ -488,15 +480,6 @@ async function submitPrompt(prompt, source = 'prompt') {
   }
 }
 
-function setupDemoPrompts() {
-  DEMO_PROMPTS.forEach((prompt) => {
-    const option = document.createElement('option');
-    option.value = prompt;
-    option.textContent = prompt;
-    els.demoSelect.appendChild(option);
-  });
-}
-
 function wire() {
   els.submitBtn.addEventListener('click', () => submitPrompt(els.promptInput.value, 'prompt'));
 
@@ -509,12 +492,6 @@ function wire() {
 
   els.retryBtn.addEventListener('click', () => submitPrompt(state.lastPrompt, 'retry'));
 
-  els.demoRunBtn.addEventListener('click', () => {
-    const selected = els.demoSelect.value;
-    els.promptInput.value = selected;
-    submitPrompt(selected, 'demo');
-  });
-
   els.showRawBtn.addEventListener('click', showRawPayload);
   els.rawCloseBtn.addEventListener('click', () => els.rawDialog.close());
 }
@@ -523,10 +500,9 @@ function start() {
   formatClock();
   setInterval(formatClock, 1000);
 
-  setupDemoPrompts();
   wire();
 
-  els.promptInput.value = DEMO_PROMPTS[0];
+  els.promptInput.value = state.lastPrompt;
 
   const lkg = loadLkg();
   if (lkg && isSafePayload(lkg)) {
