@@ -121,25 +121,24 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
       .filter(Boolean)
       .join('\n');
 
+    const requestSessionKey = `${GATEWAY_SESSION_KEY}:${randomUUID().slice(0, 8)}`;
     const idempotencyKey = `clawscreen-${randomUUID()}`;
-    const baseline = await safeHistoryFetch();
-    const baselineLength = Array.isArray((baseline as any)?.messages) ? (baseline as any).messages.length : 0;
 
     await gateway.chatSend({
       message: strictPrompt,
       deliver: false,
       idempotencyKey,
       timeoutMs: GATEWAY_RESPONSE_TIMEOUT_MS
-    }, GATEWAY_SESSION_KEY);
+    }, requestSessionKey);
 
     const startedAt = Date.now();
     while (Date.now() - startedAt < GATEWAY_RESPONSE_TIMEOUT_MS) {
       await sleep(900);
-      const history = await gateway.chatHistory(GATEWAY_SESSION_KEY);
+      const history = await gateway.chatHistory(requestSessionKey);
       const messages = Array.isArray((history as any)?.messages) ? (history as any).messages : [];
-      if (messages.length <= baselineLength) continue;
+      if (messages.length <= 1) continue;
 
-      const candidate = pickNewestAssistantText(messages.slice(baselineLength));
+      const candidate = pickNewestAssistantText(messages);
       if (!candidate) continue;
 
       const parsed = tryParseJson(candidate);
