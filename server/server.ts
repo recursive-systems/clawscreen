@@ -1,23 +1,17 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { canonicalToCompatiblePayload, toCanonicalEnvelope } from '../shared/a2ui.js';
 import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
-
-const execFileAsync = promisify(execFile);
+import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
 
 const PORT = Number(process.env.A2UI_PORT || 18841);
 const HOST = process.env.A2UI_HOST || '0.0.0.0';
 
-const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || '';
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
-const GATEWAY_AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
-const GATEWAY_SESSION_KEY = process.env.OPENCLAW_GATEWAY_SESSION_KEY || `agent:${GATEWAY_AGENT_ID}:clawscreen-a2ui`;
-const GATEWAY_RPC_TIMEOUT_MS = Number(process.env.OPENCLAW_GATEWAY_RPC_TIMEOUT_MS || 30000);
-const GATEWAY_RESPONSE_TIMEOUT_MS = Number(process.env.OPENCLAW_GATEWAY_RESPONSE_TIMEOUT_MS || 45000);
+const gateway = createOpenClawGateway(getOpenClawGatewayConfigFromEnv());
+const GATEWAY_SESSION_KEY = gateway.config.sessionKey;
+const GATEWAY_RESPONSE_TIMEOUT_MS = gateway.config.responseTimeoutMs;
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -97,18 +91,17 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
     const baseline = await safeHistoryFetch();
     const baselineLength = Array.isArray((baseline as any)?.messages) ? (baseline as any).messages.length : 0;
 
-    await callGateway('chat.send', {
-      sessionKey: GATEWAY_SESSION_KEY,
+    await gateway.chatSend({
       message: strictPrompt,
       deliver: false,
       idempotencyKey,
       timeoutMs: GATEWAY_RESPONSE_TIMEOUT_MS
-    });
+    }, GATEWAY_SESSION_KEY);
 
     const startedAt = Date.now();
     while (Date.now() - startedAt < GATEWAY_RESPONSE_TIMEOUT_MS) {
       await sleep(900);
-      const history = await callGateway('chat.history', { sessionKey: GATEWAY_SESSION_KEY });
+      const history = await gateway.chatHistory(GATEWAY_SESSION_KEY);
       const messages = Array.isArray((history as any)?.messages) ? (history as any).messages : [];
       if (messages.length <= baselineLength) continue;
 
@@ -136,7 +129,7 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
 
 async function safeHistoryFetch(): Promise<Record<string, unknown>> {
   try {
-    return await callGateway('chat.history', { sessionKey: GATEWAY_SESSION_KEY });
+    return await gateway.chatHistory(GATEWAY_SESSION_KEY);
   } catch {
     return { messages: [] };
   }
@@ -168,27 +161,6 @@ function tryParseJson(value: string): unknown | null {
     return JSON.parse(value);
   } catch {
     return null;
-  }
-}
-
-async function callGateway(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const args = ['gateway', 'call', method, '--json', '--params', JSON.stringify(params), '--timeout', String(GATEWAY_RPC_TIMEOUT_MS)];
-  if (GATEWAY_URL) args.push('--url', GATEWAY_URL);
-  if (GATEWAY_TOKEN) args.push('--token', GATEWAY_TOKEN);
-
-  try {
-    const { stdout, stderr } = await execFileAsync('openclaw', args, {
-      maxBuffer: 1024 * 1024 * 2,
-      timeout: GATEWAY_RPC_TIMEOUT_MS + 2000
-    });
-
-    if (stderr && stderr.trim()) console.warn(`[clawscreen] gateway stderr: ${stderr.trim()}`);
-    return JSON.parse(stdout || '{}');
-  } catch (error: any) {
-    const stderr = error?.stderr ? String(error.stderr).trim() : '';
-    const stdout = error?.stdout ? String(error.stdout).trim() : '';
-    const details = [stderr, stdout].filter(Boolean).join(' | ');
-    throw new Error(`gateway call failed (${method})${details ? `: ${details}` : ''}`);
   }
 }
 
