@@ -1,0 +1,19 @@
+{
+  "a2ui": {
+    "version": "0.8",
+    "ops": [
+      {
+        "op": "setScreen",
+        "value": {
+          "title": "Ops Screen",
+          "items": [
+            { "type": "text", "text": "from op" }
+          ]
+        }
+      }
+    ],
+    "model": {
+      "source": "ops"
+    }
+  }
+}

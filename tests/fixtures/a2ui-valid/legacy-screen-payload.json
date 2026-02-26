@@ -1,0 +1,14 @@
+{
+  "version": "0.8",
+  "screen": {
+    "title": "Legacy Surface",
+    "subtitle": "Compatibility",
+    "blocks": [
+      { "type": "text", "text": "legacy path" },
+      { "type": "notes", "body": "still canonicalized" }
+    ]
+  },
+  "model": {
+    "status": "ok"
+  }
+}

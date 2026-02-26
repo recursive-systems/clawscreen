@@ -1,0 +1,7 @@
+[
+  { "type": "beginRendering", "version": "0.8", "issuedAt": "2026-02-26T00:00:00.000Z" },
+  { "type": "dataModelUpdate", "version": "0.8", "model": { "count": 1, "mode": "warmup" } },
+  { "type": "surfaceUpdate", "version": "0.8", "screen": { "title": "Warmup", "blocks": [{ "type": "metric", "label": "Count", "value": 1 }] } },
+  { "type": "dataModelUpdate", "version": "0.8", "model": { "count": 2 } },
+  { "type": "surfaceUpdate", "version": "0.8", "screen": { "title": "Hot", "blocks": [{ "type": "metric", "label": "Count", "value": 2 }] } }
+]

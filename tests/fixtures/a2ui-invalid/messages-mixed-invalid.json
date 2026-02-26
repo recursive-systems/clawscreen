@@ -1,0 +1,8 @@
+{
+  "version": "0.8",
+  "messages": [
+    { "type": "surfaceUpdate" },
+    { "type": "dataModelUpdate", "model": [] },
+    { "type": "unknownType", "payload": { "x": 1 } }
+  ]
+}
