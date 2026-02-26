@@ -3,10 +3,11 @@ import {
   A2UIBlock,
   A2UICanonicalEnvelope,
   A2UICompatiblePayload,
-  canonicalToCompatiblePayload,
-  toCanonicalEnvelope
+  A2UIRenderState,
+  createInitialRenderState
 } from '../shared/a2ui';
 import { renderNode } from './render/registry';
+import { applyEnvelopeBatch } from './protocol/applyMessages';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
@@ -35,9 +36,15 @@ const els = {
   rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement
 };
 
-const state: { lastPrompt: string; lastPayload: A2UICompatiblePayload | null; lastError: Error | null } = {
+const state: {
+  lastPrompt: string;
+  lastPayload: A2UICompatiblePayload | null;
+  renderState: A2UIRenderState;
+  lastError: Error | null;
+} = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
+  renderState: createInitialRenderState('0.8'),
   lastError: null
 };
 
@@ -155,7 +162,10 @@ function parseJsonLines(text: string): unknown[] | null {
   return objects.length ? objects : null;
 }
 
-function normalizeA2uiPayload(raw: unknown): { envelope: A2UICanonicalEnvelope; payload: A2UICompatiblePayload } {
+function normalizeA2uiPayload(
+  raw: unknown,
+  previousState?: A2UIRenderState
+): { envelope: A2UICanonicalEnvelope; payload: A2UICompatiblePayload; renderState: A2UIRenderState } {
   if (raw == null) throw new Error('Empty A2UI payload');
 
   let normalizedRaw: unknown = raw;
@@ -165,16 +175,13 @@ function normalizeA2uiPayload(raw: unknown): { envelope: A2UICanonicalEnvelope; 
     else {
       const asJsonl = parseJsonLines(normalizedRaw);
       if (!asJsonl) throw new Error('Unparseable A2UI string payload');
-      normalizedRaw = { version: '0.8', screen: { title: 'A2UI Stream', blocks: asJsonl as A2UIBlock[] } };
+      normalizedRaw = asJsonl;
     }
-  } else if (Array.isArray(normalizedRaw)) {
-    normalizedRaw = { version: '0.8', screen: { title: 'A2UI Output', blocks: normalizedRaw as A2UIBlock[] } };
   }
 
   // Trust boundary: all network payload variants are coerced into canonical messages first.
-  const envelope = toCanonicalEnvelope(normalizedRaw);
-  const payload = canonicalToCompatiblePayload(envelope);
-  return { envelope, payload };
+  const applied = applyEnvelopeBatch(normalizedRaw, previousState);
+  return { envelope: applied.envelope, payload: applied.payload, renderState: applied.state };
 }
 
 function withTimeout<T>(ms: number, promise: Promise<T>): Promise<T> {
@@ -221,8 +228,31 @@ async function generateA2ui(prompt: string): Promise<unknown> {
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => (Array.isArray(value) ? value : value == null ? [] : [value]);
 
+function syncRenderSurface(nodesToRender: unknown[]) {
+  const existing = Array.from(els.renderSurface.children) as HTMLElement[];
+
+  nodesToRender.forEach((node, index) => {
+    const html = renderNode(node);
+    const current = existing[index];
+
+    if (!current) {
+      const article = document.createElement('article');
+      article.className = 'scene-card size-large';
+      article.innerHTML = html;
+      els.renderSurface.appendChild(article);
+      return;
+    }
+
+    if (current.innerHTML !== html) current.innerHTML = html;
+  });
+
+  for (let i = existing.length - 1; i >= nodesToRender.length; i -= 1) {
+    existing[i].remove();
+  }
+}
+
 function renderA2ui(payload: unknown, source: string) {
-  const normalized = normalizeA2uiPayload(payload);
+  const normalized = normalizeA2uiPayload(payload, state.renderState);
   if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
 
   setUiState('rendering', 'Rendering A2UI…');
@@ -232,19 +262,12 @@ function renderA2ui(payload: unknown, source: string) {
 
   els.title.textContent = title;
   els.subtitle.textContent = subtitle;
-  els.renderSurface.innerHTML = '';
 
   const blocks = asArray(screen.blocks || screen.children || screen.content || screen.items);
   const nodesToRender = blocks.length ? blocks : [screen];
+  syncRenderSurface(nodesToRender);
 
-  nodesToRender.forEach((node) => {
-    const article = document.createElement('article');
-    article.className = 'scene-card size-large';
-    article.innerHTML = renderNode(node);
-    els.renderSurface.appendChild(article);
-  });
-
-  // Compatibility adapter output remains the rendering contract in phase 1.
+  state.renderState = normalized.renderState;
   state.lastPayload = normalized.payload;
   persistLkg(normalized.payload);
   setUiState('ready', `Rendered ${nodesToRender.length} block(s) from ${source} (${APP_VERSION})`);
