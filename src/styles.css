@@ -1,34 +1,59 @@
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap');
 
 :root {
-  --bg-void: #05070d;
-  --bg-panel: rgba(13, 20, 37, 0.8);
-  --bg-panel-strong: rgba(15, 24, 44, 0.94);
-  --line: rgba(120, 188, 255, 0.24);
-  --line-hot: rgba(116, 251, 210, 0.38);
-  --text: #edf6ff;
-  --muted: #93a8c8;
-  --accent-cyan: #4bd0ff;
-  --accent-mint: #64f5ce;
-  --accent-gold: #ffcf7c;
-  --ok: #69f0a8;
-  --warn: #ffd180;
-  --error: #ff7a92;
-  --radius: 18px;
-  --shadow: 0 20px 45px rgba(0, 0, 0, 0.48);
-}
+  /* --- Surface --- */
+  --bg-page:        #f8f6f3;
+  --bg-surface:     #ffffff;
+  --bg-surface-dim: #f2efe9;
+  --bg-overlay:     rgba(0, 0, 0, 0.04);
 
-body[data-theme='light'] {
-  --bg-void: #eef2fb;
-  --bg-panel: rgba(255, 255, 255, 0.85);
-  --bg-panel-strong: rgba(255, 255, 255, 0.94);
-  --line: rgba(31, 76, 142, 0.18);
-  --line-hot: rgba(0, 153, 125, 0.3);
-  --text: #0f1a2f;
-  --muted: #5d708f;
-  --accent-cyan: #1f8ec2;
-  --accent-mint: #14896f;
-  --accent-gold: #af6c00;
+  /* --- Text --- */
+  --text-primary:   #1a1a1a;
+  --text-secondary: #6b6560;
+  --text-tertiary:  #9e9690;
+
+  /* --- Accent (warm terracotta) --- */
+  --accent:         #c2664a;
+  --accent-light:   #e8bfb3;
+  --accent-dim:     rgba(194, 102, 74, 0.08);
+
+  /* --- Semantic --- */
+  --ok:             #4a8c6a;
+  --warn:           #b8862e;
+  --error:          #c2504a;
+
+  /* --- Lines --- */
+  --line:           rgba(0, 0, 0, 0.08);
+  --line-strong:    rgba(0, 0, 0, 0.15);
+
+  /* --- Radius --- */
+  --radius:         12px;
+  --radius-sm:      8px;
+  --radius-lg:      16px;
+
+  /* --- Shadow --- */
+  --shadow-sm:      0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-md:      0 4px 12px rgba(0, 0, 0, 0.06);
+
+  /* --- Spacing --- */
+  --space-xs:       0.375rem;
+  --space-sm:       0.75rem;
+  --space-md:       1.5rem;
+  --space-lg:       3rem;
+
+  /* --- Typography --- */
+  --font-display:   'Source Serif 4', 'Georgia', serif;
+  --font-body:      'DM Sans', 'Avenir Next', system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+
+  --text-xs:        0.75rem;
+  --text-sm:        0.875rem;
+  --text-base:      1rem;
+  --text-lg:        1.125rem;
+  --text-xl:        1.375rem;
+  --text-2xl:       1.75rem;
+  --text-3xl:       clamp(2rem, 4vw, 3rem);
+  --text-4xl:       clamp(2.5rem, 5.5vw, 4.5rem);
 }
 
 * {
@@ -42,75 +67,54 @@ body {
 
 body {
   margin: 0;
-  font-family: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', sans-serif;
-  color: var(--text);
-  background:
-    radial-gradient(1000px 500px at -8% -15%, rgba(75, 208, 255, 0.2), transparent 70%),
-    radial-gradient(900px 520px at 102% -10%, rgba(100, 245, 206, 0.18), transparent 66%),
-    linear-gradient(165deg, #050912 0%, var(--bg-void) 58%, #0b1120 100%);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.015'/%3E%3C/svg%3E");
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-body::before,
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-}
-
-body::before {
-  opacity: 0.18;
-  background-image:
-    linear-gradient(to right, rgba(135, 177, 255, 0.2) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(135, 177, 255, 0.18) 1px, transparent 1px);
-  background-size: 54px 54px;
-  mask-image: radial-gradient(circle at 50% 34%, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.2) 70%, transparent 100%);
-}
-
-body::after {
-  opacity: 0.08;
-  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95) 1px, transparent 1px, transparent 4px);
-}
+/* ================================================================
+   App layout
+   ================================================================ */
 
 .app {
   position: relative;
   min-height: 100vh;
-  padding: clamp(0.8rem, 2vw, 1.6rem);
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-md) clamp(1rem, 3vw, 2.5rem);
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: clamp(0.75rem, 1.4vw, 1.1rem);
+  gap: var(--space-md);
   isolation: isolate;
 }
 
-.hud-card {
-  position: relative;
-  background: linear-gradient(155deg, rgba(10, 18, 34, 0.92), var(--bg-panel));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: clamp(0.9rem, 1.7vw, 1.2rem);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  backdrop-filter: blur(8px);
-}
-
-.hud-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  border: 1px solid color-mix(in srgb, var(--line-hot) 48%, transparent);
-  clip-path: polygon(0 0, 82% 0, 100% 24%, 100% 100%, 17% 100%, 0 76%);
-  opacity: 0.65;
-  pointer-events: none;
-}
+/* ================================================================
+   Header / top bar
+   ================================================================ */
 
 .top-bar {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.4fr);
-  align-items: end;
+  gap: var(--space-sm);
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
 }
 
 h1,
@@ -118,55 +122,57 @@ h1,
 .generic-block h3,
 .scene-card h3,
 .raw-dialog h3 {
-  font-family: 'Rajdhani', 'Avenir Next Condensed', sans-serif;
-  letter-spacing: 0.02em;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(2.6rem, 7vw, 5.8rem);
-  line-height: 0.9;
-  font-weight: 700;
-  text-shadow: 0 0 20px rgba(75, 208, 255, 0.26);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 .label {
-  margin: 0 0 0.2rem;
+  margin: 0 0 0.15rem;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.73rem;
+  letter-spacing: 0.14em;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  font-size: var(--text-xs);
+  font-family: var(--font-body);
 }
 
 .subtle,
 .muted {
-  color: var(--muted);
+  color: var(--text-secondary);
   margin: 0;
+  font-size: var(--text-sm);
 }
 
 .scene-meta {
   display: grid;
   justify-items: end;
   text-align: right;
-  gap: 0.2rem;
+  gap: 0.15rem;
 }
 
 .scene-meta h2 {
   margin: 0;
-  font-size: clamp(1.6rem, 3.2vw, 2.8rem);
-  line-height: 1;
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
+
+/* ================================================================
+   Controls / prompt bar
+   ================================================================ */
 
 .controls {
   display: grid;
-  gap: 0.7rem;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
 }
 
 .prompt-row,
 .controls-row {
   display: flex;
-  gap: 0.55rem;
+  gap: var(--space-sm);
   flex-wrap: wrap;
   align-items: center;
 }
@@ -174,13 +180,13 @@ h1 {
 input,
 select,
 button {
-  border: 1px solid color-mix(in srgb, var(--line-hot) 36%, var(--line));
-  background: rgba(10, 24, 49, 0.76);
-  color: var(--text);
-  border-radius: 12px;
-  font: 600 0.92rem/1.2 'IBM Plex Sans', sans-serif;
-  padding: 0.62rem 0.82rem;
-  transition: border-color 160ms ease, transform 160ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: 999px;
+  font: 500 var(--text-sm) / 1.4 var(--font-body);
+  padding: 0.6rem 1.1rem;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
 }
 
 input {
@@ -189,38 +195,59 @@ input {
 }
 
 input::placeholder {
-  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  color: var(--text-tertiary);
 }
 
 button {
   cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
   position: relative;
 }
 
 button:hover {
-  border-color: color-mix(in srgb, var(--accent-cyan) 58%, white 12%);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+  border-color: var(--accent);
+  background-color: var(--accent-dim);
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: none;
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-cyan) 38%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 #generateBtn {
-  background: linear-gradient(140deg, color-mix(in srgb, var(--accent-mint) 26%, #102c4f), color-mix(in srgb, var(--accent-cyan) 34%, #14213f));
+  background: var(--text-primary);
+  color: var(--bg-page);
+  border-color: var(--text-primary);
+}
+
+#generateBtn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 #retryBtn,
 #showRawBtn {
-  background: rgba(11, 22, 44, 0.72);
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text-secondary);
 }
+
+#retryBtn:hover,
+#showRawBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+  background: var(--bg-surface-dim);
+}
+
+/* ================================================================
+   Cards grid + scene layout
+   ================================================================ */
 
 .scene-layout {
   min-height: 0;
@@ -230,60 +257,41 @@ select:focus-visible {
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 0.78rem;
+  gap: var(--space-md);
   align-content: start;
-  perspective: 1400px;
 }
 
+/* ================================================================
+   Scene card — transparent by default; content floats on page
+   ================================================================ */
+
 .scene-card {
-  background: linear-gradient(160deg, rgba(16, 27, 51, 0.94), var(--bg-panel-strong));
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 0.9rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   position: relative;
-  overflow: hidden;
-  animation: cardIn 340ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-  transform-origin: center bottom;
+  overflow: visible;
+  animation: fadeIn 400ms ease both;
 }
 
 .scene-card::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(120deg, transparent 20%, rgba(75, 208, 255, 0.2), transparent 75%);
-  opacity: 0;
-  transition: opacity 220ms ease;
-  pointer-events: none;
+  display: none;
 }
 
-.scene-card:hover::before {
-  opacity: 1;
-}
-
-/* -- Block-type card variants -- */
+/* Block-type variants */
 
 .scene-card[data-block-type='metric'] {
-  border-color: color-mix(in srgb, var(--accent-mint) 46%, var(--line));
   text-align: center;
-}
-
-.scene-card[data-block-type='list'] {
-  border-left: 3px solid var(--accent-cyan);
+  padding: var(--space-sm) 0;
 }
 
 .scene-card[data-block-type='image'] {
   padding: 0;
   overflow: hidden;
-  border-color: color-mix(in srgb, var(--accent-gold) 30%, var(--line));
 }
 
-.scene-card[data-block-type='text'],
-.scene-card[data-block-type='notes'] {
-  border-left: 3px solid color-mix(in srgb, var(--accent-gold) 44%, var(--line));
-}
-
-/* Container blocks become transparent — children are the visual cards */
+/* Container blocks: transparent wrappers */
 .scene-card[data-block-type='section'],
 .scene-card[data-block-type='row'],
 .scene-card[data-block-type='column'] {
@@ -291,7 +299,6 @@ select:focus-visible {
   border: none;
   padding: 0;
   box-shadow: none;
-  backdrop-filter: none;
   animation: none;
 }
 
@@ -301,6 +308,7 @@ select:focus-visible {
   display: none;
 }
 
+/* Size spans */
 .size-small {
   grid-column: span 4;
 }
@@ -313,61 +321,75 @@ select:focus-visible {
   grid-column: span 12;
 }
 
+/* ================================================================
+   Block headings + content
+   ================================================================ */
+
 .generic-block h3,
 .scene-card h3 {
-  margin: 0 0 0.62rem;
-  font-size: clamp(1.14rem, 1.6vw, 1.42rem);
-  line-height: 1;
+  margin: 0 0 var(--space-sm);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
 }
 
 .node-child {
-  margin-bottom: 0.56rem;
+  margin-bottom: var(--space-md);
 }
 
-/* -- Section layout -- */
+/* ================================================================
+   Section layout
+   ================================================================ */
 
 .type-section {
   display: grid;
-  gap: 0.78rem;
+  gap: var(--space-md);
 }
 
 .type-section > h3 {
-  font-size: clamp(0.74rem, 1vw, 0.84rem);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--accent-mint);
-  border-left: 3px solid var(--accent-mint);
-  padding-left: 0.7rem;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  border-left: none;
+  padding-left: 0;
   margin: 0;
-  font-weight: 700;
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--line);
 }
 
 .type-section > p {
-  color: var(--muted);
-  font-size: 0.92rem;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
   margin: 0;
+  line-height: 1.6;
 }
 
-/* -- Children inside containers get card appearance -- */
-
+/* Children inside containers get subtle card appearance */
 .type-section > .node-child,
 .type-row > .node-child,
 .type-column > .node-child {
-  background: linear-gradient(160deg, rgba(16, 27, 51, 0.94), var(--bg-panel-strong));
+  background: var(--bg-surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 0.9rem;
+  border-radius: var(--radius);
+  padding: var(--space-md);
   margin-bottom: 0;
   overflow: hidden;
-  animation: cardIn 340ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation: fadeIn 400ms ease both;
+  box-shadow: var(--shadow-sm);
 }
 
-/* -- Row layout -- */
+/* ================================================================
+   Row layout
+   ================================================================ */
 
 .type-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.78rem;
+  gap: var(--space-md);
 }
 
 .type-row > .node-child {
@@ -375,83 +397,161 @@ select:focus-visible {
   min-width: 160px;
 }
 
-/* -- Column layout -- */
+/* ================================================================
+   Column layout
+   ================================================================ */
 
 .type-column {
   display: grid;
-  gap: 0.78rem;
+  gap: var(--space-md);
 }
 
-/* -- Image rendering -- */
+/* ================================================================
+   Image rendering
+   ================================================================ */
 
 .type-image img {
   display: block;
   width: 100%;
   max-height: min(70vh, 760px);
   object-fit: contain;
-  border-radius: 0;
-  background: rgba(8, 14, 28, 0.55);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-dim);
 }
 
 .type-image figcaption {
-  padding: 0.65rem 0.9rem 0.75rem;
+  padding: var(--space-sm) 0 0;
   margin: 0;
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-style: italic;
 }
+
+/* ================================================================
+   Metric block
+   ================================================================ */
+
+.metric-label {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  margin: 0 0 var(--space-xs);
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.metric-delta {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-xs);
+}
+
+/* ================================================================
+   List block
+   ================================================================ */
+
+.type-list h3 {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ================================================================
+   Chips / badges / state label
+   ================================================================ */
 
 .chip,
 .badge {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 0.3rem 0.62rem;
-  font-size: 0.73rem;
+  padding: 0.25rem 0.65rem;
+  font-size: var(--text-xs);
   line-height: 1;
-  background: linear-gradient(145deg, rgba(75, 208, 255, 0.18), rgba(100, 245, 206, 0.13));
-  color: color-mix(in srgb, var(--text) 78%, var(--accent-cyan));
-  border: 1px solid rgba(116, 251, 210, 0.23);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  background: var(--bg-surface-dim);
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
 }
 
-.metric-value {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: clamp(1.7rem, 3vw, 2.45rem);
-  font-weight: 700;
-  color: color-mix(in srgb, var(--accent-cyan) 65%, #fff);
-  text-shadow: 0 0 16px rgba(75, 208, 255, 0.18);
+.state-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 500;
 }
+
+.app[data-state='thinking'] .state-label { color: var(--warn); }
+.app[data-state='rendering'] .state-label { color: var(--ok); }
+.app[data-state='error'] .state-label { color: var(--error); }
+.app[data-state='ready'] .state-label { color: var(--ok); }
+
+/* ================================================================
+   Key-value table
+   ================================================================ */
 
 .kv-table {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.35rem 0.7rem;
-  margin: 0.55rem 0 0;
+  gap: 0.35rem 1rem;
+  margin: var(--space-sm) 0 0;
+  font-size: var(--text-sm);
 }
 
 .kv-table dt {
-  color: var(--muted);
-  font-weight: 600;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: var(--text-xs);
 }
 
 .kv-table dd {
   margin: 0;
+  color: var(--text-primary);
 }
+
+/* ================================================================
+   Divider
+   ================================================================ */
 
 .divider {
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  margin: 0.58rem 0;
+  border-top: 1px solid var(--line);
+  margin: var(--space-md) 0;
 }
+
+/* ================================================================
+   Typography fundamentals
+   ================================================================ */
 
 ul {
   margin: 0;
-  padding-left: 1.08rem;
+  padding-left: 1.2rem;
 }
 
 li {
-  margin: 0.34rem 0;
-  font-size: clamp(0.95rem, 1.35vw, 1.1rem);
+  margin: 0.4rem 0;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--text-primary);
 }
 
 p,
@@ -461,103 +561,111 @@ pre {
 
 pre,
 code {
-  font-family: 'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 pre {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--bg-surface-dim);
+  padding: var(--space-md);
+  border-radius: var(--radius);
 }
 
+/* ================================================================
+   Status bar
+   ================================================================ */
+
 .status {
-  padding: 0.72rem 0.88rem;
-  border-radius: 12px;
-  background: rgba(6, 14, 29, 0.8);
-  border: 1px solid var(--line);
-  font-size: 0.9rem;
-  color: var(--muted);
+  padding: var(--space-sm) 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
   position: relative;
   overflow: hidden;
 }
 
 .status::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent, rgba(75, 208, 255, 0.18), transparent);
-  transform: translateX(-110%);
-  animation: pulseSweep 2.2s ease-in-out infinite;
-  opacity: 0;
+  display: none;
 }
 
 .app[data-state='thinking'] .status {
-  border-color: var(--warn);
-  color: #ffe5ad;
-}
-
-.app[data-state='thinking'] .status::before {
-  opacity: 1;
+  border-top-color: var(--warn);
+  color: var(--warn);
 }
 
 .app[data-state='rendering'] .status {
-  border-color: var(--ok);
-  color: #cff7e0;
-}
-
-.app[data-state='rendering'] .status::before {
-  opacity: 1;
+  border-top-color: var(--ok);
+  color: var(--ok);
 }
 
 .app[data-state='error'] .status {
-  border-color: var(--error);
-  color: #ffd6dc;
+  border-top-color: var(--error);
+  color: var(--error);
 }
 
+/* ================================================================
+   Raw payload dialog
+   ================================================================ */
+
 .raw-dialog {
-  width: min(92vw, 980px);
+  width: min(92vw, 800px);
   max-height: 80vh;
-  color: var(--text);
-  background: linear-gradient(160deg, rgba(8, 16, 34, 0.98), rgba(11, 22, 46, 0.96));
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 0.9rem;
-  box-shadow: var(--shadow);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  box-shadow: var(--shadow-md);
 }
 
 .raw-dialog::backdrop {
-  background: rgba(2, 7, 16, 0.75);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .dialog-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.6rem;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--line);
 }
 
-@keyframes cardIn {
+.dialog-head h3 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.dialog-head button {
+  font-size: var(--text-sm);
+  padding: 0.4rem 0.9rem;
+}
+
+/* ================================================================
+   Animations
+   ================================================================ */
+
+@keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px) rotateX(-3deg);
+    transform: translateY(6px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) rotateX(0);
+    transform: translateY(0);
   }
 }
 
-@keyframes pulseSweep {
-  0%,
-  65% {
-    transform: translateX(-110%);
-  }
-
-  100% {
-    transform: translateX(120%);
-  }
-}
+/* ================================================================
+   Responsive
+   ================================================================ */
 
 @media (max-width: 1080px) {
   .top-bar {
@@ -570,7 +678,7 @@ pre {
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 768px) {
   .size-small,
   .size-medium,
   .size-large {
@@ -578,7 +686,25 @@ pre {
   }
 
   input {
-    min-width: 190px;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .prompt-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .prompt-row button {
+    width: 100%;
+  }
+
+  .app {
+    padding: var(--space-sm);
+  }
+
+  .cards-grid {
+    gap: var(--space-sm);
   }
 }
 
