@@ -11,7 +11,7 @@ import { applyEnvelopeBatch } from './protocol/applyMessages';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
 const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 
