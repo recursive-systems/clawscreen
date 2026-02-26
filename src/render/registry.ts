@@ -97,10 +97,11 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
   text: (node) => `<p>${escapeHtml(node.text || node.value || node.content || '')}</p>`,
   list: (node) => {
     const items = asArray(node.items || node.values || node.children);
-    return `<section class="generic-block"><h3>${escapeHtml(node.title || 'List')}</h3><ul>${items.map((item) => `<li>${renderPrimitive(item)}</li>`).join('')}</ul></section>`;
+    const title = node.title || node.label;
+    return `<section class="generic-block type-list">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<ul>${items.map((item) => `<li>${renderPrimitive(item)}</li>`).join('')}</ul></section>`;
   },
   metric: (node) => {
-    return `<section class="generic-block metric"><h3>${escapeHtml(node.label || node.title || 'Metric')}</h3><p class="metric-value">${renderPrimitive(node.value ?? node.metric ?? node.number)}</p>${node.delta ? `<p class="muted">${escapeHtml(node.delta)}</p>` : ''}</section>`;
+    return `<section class="generic-block metric"><p class="metric-label">${escapeHtml(node.label || node.title || 'Metric')}</p><p class="metric-value">${renderPrimitive(node.value ?? node.metric ?? node.number)}</p>${node.delta ? `<p class="metric-delta">${escapeHtml(node.delta)}</p>` : ''}</section>`;
   },
   card: (node) => renderGenericSection(node, 'type-card'),
   notes: (node) => renderGenericSection(node, 'type-notes'),

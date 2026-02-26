@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ClawScreen — A2UI Prompt-to-Screen v1</title>
   </head>
-  <body data-theme="dark">
+  <body data-theme="light">
     <div class="app" id="app" data-state="idle">
-      <header class="hud-card top-bar" aria-live="polite">
+      <header class="top-bar" aria-live="polite">
         <div>
           <p class="label">Now</p>
           <h1 id="timeDisplay">--:--</h1>
@@ -21,7 +21,7 @@
         </div>
       </header>
 
-      <section class="hud-card controls" aria-label="Prompt composer">
+      <section class="controls" aria-label="Prompt composer">
         <div class="prompt-row">
           <input
             id="promptInput"
@@ -35,7 +35,7 @@
 
         <div class="controls-row">
           <button id="showRawBtn" type="button">Show Raw</button>
-          <span id="stateBadge" class="chip">Idle</span>
+          <span id="stateBadge" class="state-label">Idle</span>
         </div>
       </section>
 
