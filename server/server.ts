@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { canonicalToCompatiblePayload, toCanonicalEnvelope } from '../shared/a2ui.js';
+import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -223,7 +224,7 @@ function normalizeBlock(input: unknown): Block | null {
   if (typeof input !== 'object') return null;
 
   const i = input as Record<string, any>;
-  const type = normalizeType(i.type || i.kind || i.component);
+  const type = coerceTrustedComponentType(i.type || i.kind || i.component, 'card');
   const block: Block = { type };
   const title = cleanText(i.title || i.label);
   if (title) block.title = title;
@@ -265,17 +266,6 @@ function getRenderableIssues(a2ui: Normalized): string[] {
   });
 
   return issues;
-}
-
-function normalizeType(type: unknown): string {
-  const t = String(type || '').toLowerCase();
-  if (['text', 'markdown'].includes(t)) return 'text';
-  if (['list', 'checklist', 'bullets'].includes(t)) return 'list';
-  if (['metric', 'stat', 'kpi'].includes(t)) return 'metric';
-  if (['card', 'panel'].includes(t)) return 'card';
-  if (['notes', 'note'].includes(t)) return 'notes';
-  if (['divider', 'hr'].includes(t)) return 'divider';
-  return 'card';
 }
 
 function cleanText(value: unknown): string {

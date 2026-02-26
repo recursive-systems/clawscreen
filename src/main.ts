@@ -6,6 +6,7 @@ import {
   canonicalToCompatiblePayload,
   toCanonicalEnvelope
 } from '../shared/a2ui';
+import { renderNode } from './render/registry';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
@@ -125,15 +126,6 @@ function setUiState(nextState: string, message?: string) {
   if (message) els.status.textContent = message;
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
 const persistLkg = (payload: A2UICompatiblePayload) => localStorage.setItem(A2UI_STORAGE_KEY, JSON.stringify(payload));
 
 function loadLkg(): A2UICompatiblePayload | null {
@@ -228,48 +220,6 @@ async function generateA2ui(prompt: string): Promise<unknown> {
 }
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => (Array.isArray(value) ? value : value == null ? [] : [value]);
-
-function renderPrimitive(value: unknown): string {
-  if (value == null) return '<span class="muted">—</span>';
-  if (['string', 'number', 'boolean'].includes(typeof value)) return escapeHtml(value);
-  return `<pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
-}
-
-function renderKeyValueTable(obj: Record<string, unknown>): string {
-  const entries = Object.entries(obj || {});
-  if (!entries.length) return '';
-  return `<dl class="kv-table">${entries.map(([key, val]) => `<dt>${escapeHtml(key)}</dt><dd>${renderPrimitive(val)}</dd>`).join('')}</dl>`;
-}
-
-function normalizeChildren(node: A2UIBlock): unknown[] {
-  return asArray(node?.children || node?.blocks || node?.items || node?.content || node?.body) as unknown[];
-}
-
-function renderNode(node: unknown): string {
-  if (node == null) return '';
-  if (['string', 'number', 'boolean'].includes(typeof node)) return `<p>${escapeHtml(node)}</p>`;
-
-  const n = node as A2UIBlock;
-  const type = String(n.type || n.kind || n.component || 'unknown').toLowerCase();
-  if (type === 'text' || type === 'markdown') return `<p>${escapeHtml(n.text || n.value || n.content || '')}</p>`;
-  if (type === 'list') {
-    const items = asArray(n.items || n.values || n.children);
-    return `<section class="generic-block"><h3>${escapeHtml(n.title || 'List')}</h3><ul>${items.map((item) => `<li>${renderPrimitive(item)}</li>`).join('')}</ul></section>`;
-  }
-  if (type === 'metric' || type === 'stat') {
-    return `<section class="generic-block metric"><h3>${escapeHtml(n.label || n.title || 'Metric')}</h3><p class="metric-value">${renderPrimitive(n.value ?? n.metric ?? n.number)}</p>${n.delta ? `<p class="muted">${escapeHtml(n.delta)}</p>` : ''}</section>`;
-  }
-  if (type === 'divider') return '<hr class="divider" />';
-
-  const title = n.title || n.label || null;
-  const children = normalizeChildren(n);
-  const reserved = new Set(['type', 'kind', 'component', 'title', 'label', 'children', 'blocks', 'items', 'content', 'body']);
-  const details = Object.fromEntries(Object.entries(n).filter(([k]) => !reserved.has(k)));
-  const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
-  const detailsHtml = Object.keys(details).length ? renderKeyValueTable(details) : '';
-
-  return `<section class="generic-block type-${escapeHtml(type)}">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${childHtml}${detailsHtml}</section>`;
-}
 
 function renderA2ui(payload: unknown, source: string) {
   const normalized = normalizeA2uiPayload(payload);

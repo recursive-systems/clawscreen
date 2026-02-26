@@ -13,6 +13,7 @@
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "tsx watch server/server.ts",
     "dev:client": "vite",
+    "test": "tsx --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
