@@ -1,0 +1,16 @@
+{
+  "name": "family-hud-v1",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start:backend": "node backend/server.js",
+    "start:frontend": "node backend/static-server.js",
+    "start:all": "node backend/server.js",
+    "test:curl": "curl -sS -X POST http://127.0.0.1:18841/a2ui/generate -H 'Content-Type: application/json' -d '{\"prompt\":\"Show me my top 3 priorities today\"}' | jq ."
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

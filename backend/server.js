@@ -1,0 +1,352 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
+
+const execFileAsync = promisify(execFile);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
+
+const PORT = Number(process.env.A2UI_PORT || 18841);
+const HOST = process.env.A2UI_HOST || '0.0.0.0';
+
+const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || '';
+const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const GATEWAY_AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
+const GATEWAY_SESSION_KEY =
+  process.env.OPENCLAW_GATEWAY_SESSION_KEY || `agent:${GATEWAY_AGENT_ID}:family-hud-a2ui`;
+const GATEWAY_RPC_TIMEOUT_MS = Number(process.env.OPENCLAW_GATEWAY_RPC_TIMEOUT_MS || 30000);
+const GATEWAY_RESPONSE_TIMEOUT_MS = Number(process.env.OPENCLAW_GATEWAY_RESPONSE_TIMEOUT_MS || 45000);
+
+const app = express();
+
+app.use(express.json({ limit: '256kb' }));
+app.use(
+  cors({
+    origin: true,
+    credentials: false,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  })
+);
+
+app.get('/healthz', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'family-hud-a2ui-bridge',
+    provider: 'openclaw-gateway',
+    gatewaySessionKey: GATEWAY_SESSION_KEY
+  });
+});
+
+app.post('/a2ui/generate', async (req, res) => {
+  try {
+    const prompt = String(req.body?.prompt || '').trim();
+    const context = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {};
+
+    if (!prompt) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'bad_request',
+          message: 'Missing required field: prompt (string)'
+        }
+      });
+    }
+
+    const normalized = await generateViaOpenClawGateway({ prompt, context });
+
+    return res.json({
+      ok: true,
+      provider: 'openclaw-gateway',
+      a2ui: normalized
+    });
+  } catch (error) {
+    const message = error?.message || 'Unknown generation error';
+    const isGatewayConfigIssue = /OPENCLAW_GATEWAY_|gateway call failed|openclaw\s+gateway\s+call/i.test(message);
+
+    return res.status(isGatewayConfigIssue ? 503 : 500).json({
+      ok: false,
+      error: {
+        code: isGatewayConfigIssue ? 'gateway_unavailable' : 'generation_failed',
+        message
+      }
+    });
+  }
+});
+
+app.use(express.static(projectRoot));
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(projectRoot, 'index.html'));
+});
+
+app.listen(PORT, HOST, () => {
+  console.log(`[a2ui-bridge] listening on http://${HOST}:${PORT}`);
+  console.log(`[a2ui-bridge] gateway session key: ${GATEWAY_SESSION_KEY}`);
+});
+
+async function generateViaOpenClawGateway({ prompt, context }) {
+  let feedback = '';
+
+  for (let genAttempt = 1; genAttempt <= 2; genAttempt += 1) {
+    const strictPrompt = [
+      'Return STRICT JSON only. No markdown. No prose.',
+      'Output exactly one object with this shape:',
+      '{"version":"0.8","screen":{"title":string,"subtitle":string,"blocks":Block[]}}',
+      'Allowed block types only: text, list, metric, card, notes, divider.',
+      'Never include HTML/script tags, javascript: URLs, or inline event handlers.',
+      'Each block must be complete:',
+      '- list: must include at least one item',
+      '- metric: must include value',
+      '- card/notes/text: must include non-empty text/body/content',
+      'Keep response concise and dashboard-oriented.',
+      feedback ? `Retry feedback: ${feedback}` : '',
+      '',
+      'User input payload:',
+      JSON.stringify({ prompt, context })
+    ]
+      .filter(Boolean)
+      .join('\\n');
+
+    const idempotencyKey = `family-hud-${randomUUID()}`;
+
+    const baseline = await safeHistoryFetch();
+    const baselineLength = Array.isArray(baseline?.messages) ? baseline.messages.length : 0;
+
+    await callGateway('chat.send', {
+      sessionKey: GATEWAY_SESSION_KEY,
+      message: strictPrompt,
+      deliver: false,
+      idempotencyKey,
+      timeoutMs: GATEWAY_RESPONSE_TIMEOUT_MS
+    });
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < GATEWAY_RESPONSE_TIMEOUT_MS) {
+      await sleep(900);
+      const history = await callGateway('chat.history', { sessionKey: GATEWAY_SESSION_KEY });
+      const messages = Array.isArray(history?.messages) ? history.messages : [];
+      if (messages.length <= baselineLength) continue;
+
+      const candidate = pickNewestAssistantText(messages.slice(baselineLength));
+      if (!candidate) continue;
+
+      const parsed = tryParseJson(candidate);
+      if (!parsed) continue;
+
+      const normalized = normalizeA2uiPayload(parsed, prompt);
+      const issues = getRenderableIssues(normalized);
+      if (!issues.length) {
+        return normalized;
+      }
+
+      feedback = `Previous output failed validation: ${issues.join('; ')}`;
+      break;
+    }
+  }
+
+  throw new Error(
+    `Gateway did not return valid renderable JSON within retries (${GATEWAY_RESPONSE_TIMEOUT_MS}ms per attempt). ` +
+      'Check gateway health with: openclaw gateway status'
+  );
+}
+
+async function safeHistoryFetch() {
+  try {
+    return await callGateway('chat.history', { sessionKey: GATEWAY_SESSION_KEY });
+  } catch {
+    return { messages: [] };
+  }
+}
+
+function pickNewestAssistantText(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (msg?.role !== 'assistant') continue;
+    const text = extractTextFromMessage(msg);
+    if (text) return text;
+  }
+  return '';
+}
+
+function extractTextFromMessage(msg) {
+  const chunks = Array.isArray(msg?.content) ? msg.content : [];
+  const parts = chunks
+    .filter((c) => c?.type === 'text' && typeof c?.text === 'string')
+    .map((c) => c.text.trim())
+    .filter(Boolean);
+
+  if (!parts.length) return '';
+  return parts.join('\n').replace(/^```json\s*/i, '').replace(/^```/i, '').replace(/```$/, '').trim();
+}
+
+function tryParseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+async function callGateway(method, params) {
+  const args = ['gateway', 'call', method, '--json', '--params', JSON.stringify(params), '--timeout', String(GATEWAY_RPC_TIMEOUT_MS)];
+
+  if (GATEWAY_URL) {
+    args.push('--url', GATEWAY_URL);
+  }
+  if (GATEWAY_TOKEN) {
+    args.push('--token', GATEWAY_TOKEN);
+  }
+
+  try {
+    const { stdout, stderr } = await execFileAsync('openclaw', args, {
+      maxBuffer: 1024 * 1024 * 2,
+      timeout: GATEWAY_RPC_TIMEOUT_MS + 2000
+    });
+
+    if (stderr && stderr.trim()) {
+      // keep non-fatal stderr available in logs for troubleshooting
+      console.warn(`[a2ui-bridge] gateway stderr: ${stderr.trim()}`);
+    }
+
+    return JSON.parse(stdout || '{}');
+  } catch (error) {
+    const stderr = error?.stderr ? String(error.stderr).trim() : '';
+    const stdout = error?.stdout ? String(error.stdout).trim() : '';
+    const details = [stderr, stdout].filter(Boolean).join(' | ');
+    throw new Error(`gateway call failed (${method})${details ? `: ${details}` : ''}`);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeA2uiPayload(raw, fallbackPrompt = 'Generated screen') {
+  const payload = raw?.a2ui ?? raw?.payload ?? raw;
+
+  const version = typeof payload?.version === 'string' ? payload.version : '0.8';
+  const screenIn = payload?.screen && typeof payload.screen === 'object' ? payload.screen : payload;
+
+  const title = cleanText(screenIn?.title) || `HUD: ${fallbackPrompt.slice(0, 60)}`;
+  const subtitle = cleanText(screenIn?.subtitle) || 'Generated by OpenClaw gateway bridge';
+
+  const sourceBlocks = Array.isArray(screenIn?.blocks)
+    ? screenIn.blocks
+    : Array.isArray(screenIn?.children)
+      ? screenIn.children
+      : Array.isArray(screenIn?.items)
+        ? screenIn.items
+        : [];
+
+  const blocks = sourceBlocks.map(normalizeBlock).filter(Boolean).slice(0, 12);
+
+  if (!blocks.length) {
+    blocks.push({
+      type: 'text',
+      title: 'Summary',
+      text: cleanText(fallbackPrompt) || 'No content returned by model.'
+    });
+  }
+
+  return {
+    version,
+    screen: {
+      title,
+      subtitle,
+      blocks
+    }
+  };
+}
+
+function normalizeBlock(input) {
+  if (input == null) return null;
+
+  if (typeof input === 'string' || typeof input === 'number' || typeof input === 'boolean') {
+    return {
+      type: 'text',
+      text: cleanText(input)
+    };
+  }
+
+  if (typeof input !== 'object') return null;
+
+  const type = normalizeType(input.type || input.kind || input.component);
+  const block = { type };
+
+  const title = cleanText(input.title || input.label);
+  if (title) block.title = title;
+
+  if (type === 'list') {
+    const items = Array.isArray(input.items) ? input.items : Array.isArray(input.values) ? input.values : [];
+    block.items = items.map((x) => cleanText(x)).filter(Boolean).slice(0, 8);
+    if (!block.items.length) return null;
+    return block;
+  }
+
+  if (type === 'metric') {
+    const value = cleanText(input.value ?? input.metric ?? input.number ?? input.text);
+    if (!value) return null;
+    block.value = value;
+    const delta = cleanText(input.delta);
+    if (delta) block.delta = delta;
+    return block;
+  }
+
+  if (type === 'divider') return block;
+
+  const text = cleanText(input.text || input.body || input.content || input.value);
+  if (text) block.text = text;
+
+  if (!block.title && !block.text) return null;
+  return block;
+}
+
+
+function getRenderableIssues(a2ui) {
+  const blocks = Array.isArray(a2ui?.screen?.blocks) ? a2ui.screen.blocks : [];
+  const issues = [];
+  if (!blocks.length) issues.push('screen.blocks is empty');
+
+  blocks.forEach((b, idx) => {
+    const t = String(b?.type || 'card');
+    if (t === 'list' && (!Array.isArray(b.items) || !b.items.length)) {
+      issues.push(`block[${idx}] list has no items`);
+    }
+    if (t === 'metric' && !cleanText(b.value)) {
+      issues.push(`block[${idx}] metric has no value`);
+    }
+    if ((t === 'card' || t === 'notes' || t === 'text') && !cleanText(b.text)) {
+      issues.push(`block[${idx}] ${t} has no text`);
+    }
+  });
+
+  return issues;
+}
+function normalizeType(type) {
+  const t = String(type || '').toLowerCase();
+  if (['text', 'markdown'].includes(t)) return 'text';
+  if (['list', 'checklist', 'bullets'].includes(t)) return 'list';
+  if (['metric', 'stat', 'kpi'].includes(t)) return 'metric';
+  if (['card', 'panel'].includes(t)) return 'card';
+  if (['notes', 'note'].includes(t)) return 'notes';
+  if (['divider', 'hr'].includes(t)) return 'divider';
+  return 'card';
+}
+
+function cleanText(value) {
+  if (value == null) return '';
+  const text = String(value)
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .trim();
+
+  return text.slice(0, 300);
+}
