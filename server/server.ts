@@ -61,7 +61,20 @@ app.listen(PORT, HOST, () => {
 });
 
 type GenerateInput = { prompt: string; context: Record<string, unknown> };
-type Block = { type: string; title?: string; text?: string; items?: string[]; value?: string; delta?: string };
+type Block = {
+  type: string;
+  title?: string;
+  text?: string;
+  items?: string[];
+  value?: string;
+  delta?: string;
+  children?: Block[];
+  src?: string;
+  url?: string;
+  alt?: string;
+  caption?: string;
+  icon?: string;
+};
 type Normalized = { version: string; screen: { title: string; subtitle: string; blocks: Block[] } };
 
 async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): Promise<Normalized> {
@@ -227,6 +240,43 @@ function normalizeBlock(input: unknown): Block | null {
 
   if (type === 'divider') return block;
 
+  if (type === 'image') {
+    const src = cleanUrl(i.src || i.url || i.image || i.href || i.value || i.content);
+    if (!src) return null;
+    block.src = src;
+    const alt = cleanText(i.alt || i.label || i.title);
+    const caption = cleanText(i.caption || i.text || i.body);
+    if (alt) block.alt = alt;
+    if (caption) block.caption = caption;
+    return block;
+  }
+
+  if (type === 'icon') {
+    const icon = cleanText(i.icon || i.token || i.value || i.text || i.label || i.title);
+    if (!icon) return null;
+    block.icon = icon;
+    return block;
+  }
+
+  if (type === 'row' || type === 'column' || type === 'section') {
+    const childrenSource = Array.isArray(i.children)
+      ? i.children
+      : Array.isArray(i.blocks)
+        ? i.blocks
+        : Array.isArray(i.items)
+          ? i.items
+          : [];
+
+    const children = childrenSource.map((child: unknown) => normalizeBlock(child)).filter(Boolean) as Block[];
+    if (children.length) block.children = children;
+
+    const text = cleanText(i.text || i.body || i.content || i.value);
+    if (text) block.text = text;
+
+    if (!block.title && !block.text && !block.children?.length) return null;
+    return block;
+  }
+
   const text = cleanText(i.text || i.body || i.content || i.value);
   if (text) block.text = text;
   if (!block.title && !block.text) return null;
@@ -257,4 +307,23 @@ function cleanText(value: unknown): string {
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .trim();
   return text.slice(0, 300);
+}
+
+function cleanUrl(value: unknown): string {
+  const raw = cleanText(value);
+  if (!raw) return '';
+
+  const compact = raw.replace(/\s+/g, '');
+  if (/^(javascript|data):/i.test(compact)) return '';
+
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(raw)) {
+    try {
+      const protocol = new URL(raw).protocol.toLowerCase();
+      if (protocol !== 'http:' && protocol !== 'https:') return '';
+    } catch {
+      return '';
+    }
+  }
+
+  return raw.slice(0, 1024);
 }
