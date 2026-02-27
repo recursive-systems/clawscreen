@@ -1,0 +1,56 @@
+version: 1
+product: ClawScreen
+north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
+
+lanes:
+  - id: reliability
+    outcome: Stable, low-latency generation/render pipeline
+  - id: interaction
+    outcome: Agentic interaction loop (event -> LLM-decided next UI)
+  - id: trust_ux
+    outcome: Source/freshness/explainability in every surface
+
+backlog:
+  - id: REL-001
+    lane: reliability
+    title: Gateway polling termination hardening
+    priority: P0
+    acceptance:
+      - No long polling after terminal assistant stop without parseable JSON
+      - Clear retry reason surfaced to UI
+      - test/typecheck/build pass
+  - id: INT-001
+    lane: interaction
+    title: Phase B event envelope contract
+    priority: P0
+    acceptance:
+      - Define action event schema and response schema
+      - Add validator + fixtures + tests
+      - Preserve /a2ui/generate compatibility
+  - id: INT-002
+    lane: interaction
+    title: Client model store + path bindings
+    priority: P1
+    acceptance:
+      - Path read/write utilities with tests
+      - Controlled state updates for interactive components
+  - id: INT-003
+    lane: interaction
+    title: Button action dispatch loop
+    priority: P1
+    acceptance:
+      - POST /a2ui/action with action + model snapshot
+      - Apply response through incremental pipeline
+  - id: TRUST-001
+    lane: trust_ux
+    title: Source and freshness badges
+    priority: P1
+    acceptance:
+      - Show data source per major block group when available
+      - Last-updated timestamp at screen level
+
+quality_gates:
+  - npm test
+  - npm run typecheck
+  - npm run build
+  - smoke: POST /a2ui/generate returns ok:true
