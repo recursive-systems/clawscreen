@@ -2,6 +2,13 @@
 
 Timezone: America/Chicago
 
+## 0) Daily deep research + roadmap enrichment (Daily 08:45)
+- Brief deep-research agent on A2UI evolution + agentic UI patterns + competitive references
+- Synthesize findings into roadmap updates (P0/P1/P2)
+- Dispatch one engineering-ready task from highest-value insight
+- Post concise research+execution update in #clawscreen with preview link
+- Cron job: `clawscreen-daily-deep-research` (`637dd3cc-7b99-4373-8144-0000f4cf7090`)
+
 ## 1) Daily planning + dispatch (Mon-Fri 09:05)
 - Select top 1-2 items from `ops/ROADMAP.yaml`
 - Send implementation brief to `agent:dev:discord:channel:1475880024111583243`
