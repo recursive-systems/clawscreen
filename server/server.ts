@@ -29,24 +29,54 @@ app.get('/healthz', (_req: Request, res: Response) => {
 });
 
 app.post('/a2ui/generate', async (req: Request, res: Response) => {
-  try {
-    const prompt = String(req.body?.prompt || '').trim();
-    const context = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {};
+  const prompt = String(req.body?.prompt || '').trim();
+  const context = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {};
+  const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
 
-    if (!prompt) {
-      return res.status(400).json({ ok: false, error: { code: 'bad_request', message: 'Missing required field: prompt (string)' } });
+  if (!prompt) {
+    return res.status(400).json({ ok: false, error: { code: 'bad_request', message: 'Missing required field: prompt (string)' } });
+  }
+
+  if (!wantsStream) {
+    try {
+      const normalized = await generateViaOpenClawGateway({ prompt, context });
+      return res.json({ ok: true, provider: 'openclaw-gateway', a2ui: normalized });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown generation error';
+      const isGatewayConfigIssue = /OPENCLAW_GATEWAY_|gateway call failed|openclaw\s+gateway\s+call/i.test(message);
+      return res.status(isGatewayConfigIssue ? 503 : 500).json({
+        ok: false,
+        error: { code: isGatewayConfigIssue ? 'gateway_unavailable' : 'generation_failed', message }
+      });
     }
+  }
 
-    const normalized = await generateViaOpenClawGateway({ prompt, context });
-    return res.json({ ok: true, provider: 'openclaw-gateway', a2ui: normalized });
+  // SSE streaming mode
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+
+  const sendEvent = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent('status', { text: 'Sending to model…' });
+
+  try {
+    const normalized = await generateViaOpenClawGateway(
+      { prompt, context },
+      (status) => sendEvent('status', { text: status }),
+      (partial) => sendEvent('partial', { ok: true, provider: 'openclaw-gateway', a2ui: partial })
+    );
+    sendEvent('result', { ok: true, provider: 'openclaw-gateway', a2ui: normalized });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown generation error';
-    const isGatewayConfigIssue = /OPENCLAW_GATEWAY_|gateway call failed|openclaw\s+gateway\s+call/i.test(message);
-    return res.status(isGatewayConfigIssue ? 503 : 500).json({
-      ok: false,
-      error: { code: isGatewayConfigIssue ? 'gateway_unavailable' : 'generation_failed', message }
-    });
+    sendEvent('error', { message });
   }
+
+  res.end();
 });
 
 const clientDistPath = path.resolve(process.cwd(), 'dist/client');
@@ -77,13 +107,23 @@ type Block = {
 };
 type Normalized = { version: string; screen: { title: string; subtitle: string; blocks: Block[] } };
 
-async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): Promise<Normalized> {
+type ProgressCallbacks = {
+  onStatus?: (status: string) => void;
+  onPartial?: (partial: Normalized) => void;
+};
+
+async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, onStatus?: (status: string) => void, onPartial?: (partial: Normalized) => void): Promise<Normalized> {
   let feedback = '';
 
   for (let genAttempt = 1; genAttempt <= 2; genAttempt += 1) {
     const strictPrompt = [
       'You are generating a ClawScreen A2UI response.',
-      'If the request needs live external/personal data (calendar, email, tasks, weather, files, etc.), use available OpenClaw tools first, then answer from tool results.',
+      'SPEED IS CRITICAL. Users are waiting in real-time. Target under 30 seconds total.',
+      '- Limit yourself to at most 3 tool calls. Pick the 2-3 most important data sources for the request.',
+      '- If a tool call is slow or fails, skip it and note the gap in a block — do NOT retry.',
+      '- For simple prompts (greetings, general knowledge, opinions), respond immediately with NO tool calls.',
+      '- Only use tools when the user explicitly needs live/personal data (calendar, weather, tasks, etc.).',
+      'If the request needs live external/personal data, use available OpenClaw tools first, then answer from tool results.',
       'Prefer freshness over guessing. Do not fabricate missing data.',
       'Return STRICT JSON only. No markdown. No prose.',
       'Output exactly one object with this shape:',
@@ -132,26 +172,70 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput): P
     }, requestSessionKey);
 
     const startedAt = Date.now();
+    let pollCount = 0;
     while (Date.now() - startedAt < GATEWAY_RESPONSE_TIMEOUT_MS) {
-      await sleep(900);
+      await sleep(1500);
+      pollCount += 1;
       const history = await gateway.chatHistory(requestSessionKey);
       const messages = Array.isArray((history as any)?.messages) ? (history as any).messages : [];
-      if (messages.length <= 1) continue;
+      if (messages.length <= 1) {
+        if (pollCount % 4 === 0) console.log(`[clawscreen] still waiting for response (${Math.round((Date.now() - startedAt) / 1000)}s, ${messages.length} msgs)`);
+        continue;
+      }
+
+      const lastMsg = messages[messages.length - 1] as any;
+      const lastRole = lastMsg?.role;
+      const lastStop = lastMsg?.stopReason;
+      if (pollCount % 4 === 0 || lastRole === 'assistant') {
+        console.log(`[clawscreen] polling: ${messages.length} msgs, last=${lastRole}, stop=${lastStop || 'n/a'} (${Math.round((Date.now() - startedAt) / 1000)}s)`);
+      }
+
+      // Emit status update for SSE clients
+      if (onStatus) {
+        const statusText = describeGatewayProgress(messages);
+        if (statusText) onStatus(statusText);
+      }
+
+      // Progressive rendering: emit partial screen from tool results every ~10s
+      if (onPartial && messages.length >= 3 && pollCount % 7 === 0) {
+        const partial = synthesizePartialScreen(messages, prompt);
+        if (partial) onPartial(partial);
+      }
+
+      // If the model is still doing tool calls, keep waiting
+      if (lastRole === 'assistant' && lastStop === 'toolUse') continue;
+      if (lastRole === 'toolResult') continue;
+
+      // If the model errored, break out and retry on next attempt
+      if (lastRole === 'assistant' && lastStop === 'error') {
+        console.warn(`[clawscreen] gateway model returned stopReason=error after ${messages.length} msgs — will retry`);
+        if (onStatus) onStatus('Model error, retrying…');
+        feedback = 'Previous attempt failed with a model error. Please try again.';
+        break;
+      }
 
       const candidate = pickNewestAssistantText(messages);
-      if (!candidate) continue;
 
-      const parsed = tryParseJson(candidate);
-      if (!parsed) continue;
+      const parsed = candidate ? tryParseJson(candidate) || tryParseEmbeddedJson(candidate) : null;
+      if (parsed) {
+        // Trust boundary: model output is coerced into canonical messages before any rendering shape is used.
+        const envelope = toCanonicalEnvelope(parsed);
+        const normalized = normalizeA2uiPayload(canonicalToCompatiblePayload(envelope), prompt);
+        const issues = getRenderableIssues(normalized);
+        if (!issues.length) return normalized;
 
-      // Trust boundary: model output is coerced into canonical messages before any rendering shape is used.
-      const envelope = toCanonicalEnvelope(parsed);
-      const normalized = normalizeA2uiPayload(canonicalToCompatiblePayload(envelope), prompt);
-      const issues = getRenderableIssues(normalized);
-      if (!issues.length) return normalized;
+        feedback = `Previous output failed validation: ${issues.join('; ')}`;
+        break;
+      }
 
-      feedback = `Previous output failed validation: ${issues.join('; ')}`;
-      break;
+      // If assistant already terminated but did not produce parseable JSON, fail fast and retry.
+      if (lastRole === 'assistant' && lastStop && lastStop !== 'toolUse') {
+        feedback = 'Previous response was not valid JSON. Return exactly one valid JSON object only.';
+        break;
+      }
+
+      // Otherwise keep polling until timeout.
+      continue;
     }
   }
 
@@ -166,6 +250,109 @@ async function safeHistoryFetch(): Promise<Record<string, unknown>> {
   } catch {
     return { messages: [] };
   }
+}
+
+function synthesizePartialScreen(messages: Array<Record<string, unknown>>, prompt: string): Normalized | null {
+  const blocks: Block[] = [];
+  const seenTools = new Set<string>();
+
+  for (const msg of messages) {
+    const m = msg as any;
+
+    // Extract tool names being called
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+      for (const c of m.content) {
+        if (c.type === 'toolCall' && c.name) seenTools.add(c.name);
+      }
+    }
+
+    // Extract summaries from tool results
+    if (m.role === 'toolResult' && Array.isArray(m.content)) {
+      for (const c of m.content) {
+        if (c.type !== 'text' || !c.text) continue;
+        const text = String(c.text).trim();
+        if (text.length < 20 || text.length > 4000) continue;
+        if (c.isError) continue;
+
+        // Try to parse as JSON and extract something meaningful
+        try {
+          const parsed = JSON.parse(text);
+          // Weather-like data
+          if (parsed.current || parsed.temperature || parsed.weather) {
+            const temp = parsed.current?.temperature_2m || parsed.temperature;
+            if (temp != null) {
+              blocks.push({ type: 'metric', title: 'Temperature', value: `${temp}°` });
+            }
+            continue;
+          }
+          // Calendar/tasks - array of items
+          if (Array.isArray(parsed.events || parsed.items || parsed.tasks || parsed.tasklists)) {
+            const arr = parsed.events || parsed.items || parsed.tasks || parsed.tasklists;
+            if (arr.length) {
+              blocks.push({
+                type: 'list',
+                title: parsed.events ? 'Calendar' : 'Tasks',
+                items: arr.slice(0, 5).map((e: any) => cleanText(e.summary || e.title || e.name || JSON.stringify(e).slice(0, 80)))
+              });
+            }
+            continue;
+          }
+        } catch {
+          // Not JSON — use as text snippet if it's short enough
+          if (text.length < 300 && !text.includes('Usage:') && !text.includes('Error')) {
+            blocks.push({ type: 'text', text: text.slice(0, 200) });
+          }
+        }
+      }
+    }
+  }
+
+  if (!blocks.length) return null;
+
+  // Add a "still loading" indicator
+  const pending = [...seenTools].filter((t) => !['read'].includes(t));
+  if (pending.length) {
+    blocks.push({ type: 'text', title: 'Still loading…', text: `Gathering more data (${pending.length} sources)` });
+  }
+
+  return {
+    version: '0.8',
+    screen: {
+      title: `${prompt.slice(0, 50)}`,
+      subtitle: 'Partial — updating as data arrives…',
+      blocks: blocks.slice(0, 8)
+    }
+  };
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  web_fetch: 'Fetching web data',
+  web_search: 'Searching the web',
+  read: 'Reading files',
+  exec: 'Running a command',
+  process: 'Processing data',
+  search: 'Searching'
+};
+
+function describeGatewayProgress(messages: Array<Record<string, unknown>>): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i] as any;
+    if (msg?.role === 'assistant') {
+      const content = Array.isArray(msg.content) ? msg.content : [];
+      const toolCalls = content.filter((c: any) => c?.type === 'toolCall');
+      if (toolCalls.length) {
+        const unique = [...new Set(toolCalls.map((c: any) => TOOL_LABELS[c.name] || c.name))];
+        return unique.slice(0, 2).join(', ');
+      }
+      const thinking = content.find((c: any) => c?.type === 'thinking');
+      if (thinking?.thinking) {
+        const snippet = String(thinking.thinking).slice(0, 60).replace(/\n/g, ' ').trim();
+        return snippet || 'Thinking…';
+      }
+      return 'Generating response…';
+    }
+  }
+  return 'Waiting for model…';
 }
 
 function pickNewestAssistantText(messages: Array<Record<string, unknown>>): string {
@@ -195,6 +382,18 @@ function tryParseJson(value: string): unknown | null {
   } catch {
     return null;
   }
+}
+
+function tryParseEmbeddedJson(value: string): unknown | null {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first === -1 || last === -1 || last <= first) return null;
+
+  const slice = text.slice(first, last + 1);
+  return tryParseJson(slice);
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -236,7 +435,7 @@ function normalizeBlock(input: unknown): Block | null {
 
   if (type === 'list') {
     const items = Array.isArray(i.items) ? i.items : Array.isArray(i.values) ? i.values : [];
-    block.items = items.map((x) => cleanText(x)).filter(Boolean).slice(0, 8);
+    block.items = items.map((x) => flattenListItem(x)).filter(Boolean).slice(0, 8);
     if (!block.items.length) return null;
     return block;
   }
@@ -308,6 +507,20 @@ function getRenderableIssues(a2ui: Normalized): string[] {
   });
 
   return issues;
+}
+
+function flattenListItem(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value !== 'object') return cleanText(value);
+  const obj = value as Record<string, unknown>;
+  const label = cleanText(obj.label || obj.title || obj.name);
+  const detail = cleanText(obj.text || obj.value || obj.summary || obj.description || obj.body || obj.content);
+  if (label && detail) return `${label}: ${detail}`;
+  if (label) return label;
+  if (detail) return detail;
+  // Last resort: join all string values
+  const parts = Object.values(obj).filter((v) => typeof v === 'string' && v.trim()).map((v) => cleanText(v));
+  return parts.join(' — ') || cleanText(JSON.stringify(value));
 }
 
 function cleanText(value: unknown): string {
