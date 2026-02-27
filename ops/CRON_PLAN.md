@@ -2,6 +2,12 @@
 
 Timezone: America/Chicago
 
+## -1) Daily self-optimizer (Daily 07:20)
+- Review recent memory + ops docs + shipped commits for execution friction
+- Apply low-risk process improvements to roadmap/templates/checklists
+- Log learnings and post concise optimization report
+- Cron job: `clawscreen-self-optimizer` (`88ace0c6-9a2f-408b-9192-1e47c9dce031`)
+
 ## 0) Daily deep research + roadmap enrichment (Daily 08:45)
 - Brief deep-research agent on A2UI evolution + agentic UI patterns + competitive references
 - Synthesize findings into roadmap updates (P0/P1/P2)
