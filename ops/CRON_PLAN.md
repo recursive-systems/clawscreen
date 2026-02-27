@@ -21,6 +21,14 @@ Timezone: America/Chicago
 - Post short plan update in #clawscreen
 - Cron job: `clawscreen-plan-dispatch` (`ba20ffc3-f0f7-40b0-ac5a-d9ad7199dfa8`)
 
+## 1.5) Weekday implementation sprint (AM 10:30, PM 15:30)
+- Execute roadmap items via Engineering Brain with hard ship requirements
+- Require code + tests/typecheck/build + commit/push
+- Post ship updates with preview link
+- Cron jobs:
+  - `clawscreen-implementation-sprint-am` (`5725fd16-b7a1-4a54-bb74-d181aa0311b2`)
+  - `clawscreen-implementation-sprint-pm` (`f9c614d1-6db4-4b29-8aaf-ea083cb2c8ed`)
+
 ## 2) Midday health check (Daily 13:10)
 - Verify:
   - `GET /healthz` on 18841
