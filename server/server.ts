@@ -86,27 +86,76 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: { code: 'bad_request', message: validated.error } });
   }
 
+  const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
   const { version, event } = validated.value;
+  const taskId = `task_${randomUUID().slice(0, 8)}`;
   const targetText = event.target ? `Target: ${event.target}` : 'No explicit target';
 
-  const response = createActionResponseEnvelope({
+  const queued = createActionResponseEnvelope({
     version,
-    taskId: `task_${randomUUID().slice(0, 8)}`,
-    output: {
-      version,
-      screen: {
-        title: event.type === 'button.click' ? 'Action processed' : 'Event processed',
-        subtitle: `event_id=${event.id}`,
-        blocks: [
-          { type: 'text', title: 'Type', text: event.type },
-          { type: 'text', title: 'Target', text: targetText },
-          { type: 'text', title: 'Timestamp', text: event.timestamp }
-        ]
-      }
-    }
+    taskId,
+    status: 'queued',
+    progressMessage: 'Action accepted and queued'
   });
 
-  return res.json(response);
+  const running = createActionResponseEnvelope({
+    version,
+    taskId,
+    status: 'running',
+    progressMessage: `Dispatching ${event.type}`
+  });
+
+  const terminal = event.type === 'auth.required'
+    ? createActionResponseEnvelope({
+        version,
+        taskId,
+        status: 'input_required',
+        progressMessage: 'Waiting for human takeover to complete authentication',
+        inputRequired: {
+          reason: 'auth_handoff',
+          required_fields: ['username', 'password_or_passkey'],
+          resume_token: `resume_${taskId}`
+        }
+      })
+    : createActionResponseEnvelope({
+        version,
+        taskId,
+        status: 'completed',
+        progressMessage: 'Action execution completed',
+        output: {
+          version,
+          screen: {
+            title: event.type === 'button.click' ? 'Action processed' : 'Event processed',
+            subtitle: `event_id=${event.id}`,
+            blocks: [
+              { type: 'text', title: 'Type', text: event.type },
+              { type: 'text', title: 'Target', text: targetText },
+              { type: 'text', title: 'Timestamp', text: event.timestamp }
+            ]
+          }
+        }
+      });
+
+  if (!wantsStream) {
+    return res.json(terminal);
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+
+  const sendEvent = (eventName: string, data: unknown) => {
+    res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent('task', queued);
+  await sleep(250);
+  sendEvent('task', running);
+  await sleep(250);
+  sendEvent('task', terminal);
+  res.end();
 });
 
 const clientDistPath = path.resolve(process.cwd(), 'dist/client');

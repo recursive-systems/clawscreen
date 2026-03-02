@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createActionResponseEnvelope, validateActionRequestEnvelope } from '../shared/actionEnvelope';
+import {
+  createActionResponseEnvelope,
+  validateActionRequestEnvelope,
+  validateActionResponseEnvelope,
+  validateTaskStatusTransition
+} from '../shared/actionEnvelope';
 import { canonicalToCompatiblePayload } from '../shared/a2ui';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,8 +53,70 @@ test('action response envelope canonicalizes output and stays compatible with ge
 
   assert.equal(response.ok, true);
   assert.equal(response.task.status, 'completed');
-  assert.equal(response.a2ui.messages[0].type, 'beginRendering');
+  assert.equal(response.task_id, 'task_42');
+  assert.equal(response.task.artifact?.messages[0].type, 'beginRendering');
 
-  const compatibility = canonicalToCompatiblePayload(response.a2ui);
+  const compatibility = canonicalToCompatiblePayload(response.a2ui!);
   assert.equal(compatibility.screen?.title, 'Action Applied');
+});
+
+test('task lifecycle transitions enforce queued/running/input_required/completed rules', () => {
+  assert.equal(validateTaskStatusTransition(null, 'queued'), true);
+  assert.equal(validateTaskStatusTransition('queued', 'running'), true);
+  assert.equal(validateTaskStatusTransition('running', 'input_required'), true);
+  assert.equal(validateTaskStatusTransition('input_required', 'running'), true);
+  assert.equal(validateTaskStatusTransition('running', 'completed'), true);
+  assert.equal(validateTaskStatusTransition('completed', 'running'), false);
+  assert.equal(validateTaskStatusTransition('queued', 'completed'), true);
+  assert.equal(validateTaskStatusTransition('queued', 'input_required'), true);
+});
+
+test('response validator enforces input_required payload and terminal artifacts/errors', () => {
+  const inputReq = validateActionResponseEnvelope({
+    ok: true,
+    version: '0.8',
+    task_id: 'task_abc',
+    task: {
+      id: 'task_abc',
+      status: 'input_required',
+      progress_message: 'Need MFA code',
+      input_required: {
+        reason: 'mfa_challenge',
+        required_fields: ['otp_code'],
+        resume_token: 'resume_123'
+      }
+    }
+  }, 'running');
+  assert.equal(inputReq.ok, true);
+
+  const badInputReq = validateActionResponseEnvelope({
+    ok: true,
+    task_id: 'task_abc',
+    task: {
+      id: 'task_abc',
+      status: 'input_required'
+    }
+  }, 'running');
+  assert.equal(badInputReq.ok, false);
+
+  const completed = validateActionResponseEnvelope({
+    ok: true,
+    task_id: 'task_abc',
+    task: {
+      id: 'task_abc',
+      status: 'completed',
+      artifact: {
+        version: '0.8',
+        screen: { title: 'Done', blocks: [{ type: 'text', text: 'Complete' }] }
+      }
+    }
+  }, 'running');
+  assert.equal(completed.ok, true);
+
+  const failedNoError = validateActionResponseEnvelope({
+    ok: true,
+    task_id: 'task_abc',
+    task: { id: 'task_abc', status: 'failed' }
+  }, 'running');
+  assert.equal(failedNoError.ok, false);
 });
