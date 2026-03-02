@@ -1,0 +1,21 @@
+{
+  "version": "0.8",
+  "event": {
+    "id": "evt_1001",
+    "type": "button.click",
+    "target": "approve-btn",
+    "timestamp": "2026-03-02T10:31:00.000Z",
+    "payload": {
+      "action": "approve"
+    },
+    "snapshot": {
+      "screen": {
+        "title": "Pending Approval"
+      },
+      "model": {
+        "draftId": "d_123",
+        "confidence": 0.93
+      }
+    }
+  }
+}

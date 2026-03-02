@@ -1,0 +1,8 @@
+{
+  "version": "0.8",
+  "event": {
+    "type": "button.click",
+    "target": "approve-btn",
+    "timestamp": "2026-03-02T10:31:00.000Z"
+  }
+}

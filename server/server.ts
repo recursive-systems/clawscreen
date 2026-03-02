@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { canonicalToCompatiblePayload, toCanonicalEnvelope } from '../shared/a2ui.js';
+import { createActionResponseEnvelope, validateActionRequestEnvelope } from '../shared/actionEnvelope.js';
 import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
 import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
 
@@ -77,6 +78,35 @@ app.post('/a2ui/generate', async (req: Request, res: Response) => {
   }
 
   res.end();
+});
+
+app.post('/a2ui/action', async (req: Request, res: Response) => {
+  const validated = validateActionRequestEnvelope(req.body);
+  if (!validated.ok) {
+    return res.status(400).json({ ok: false, error: { code: 'bad_request', message: validated.error } });
+  }
+
+  const { version, event } = validated.value;
+  const targetText = event.target ? `Target: ${event.target}` : 'No explicit target';
+
+  const response = createActionResponseEnvelope({
+    version,
+    taskId: `task_${randomUUID().slice(0, 8)}`,
+    output: {
+      version,
+      screen: {
+        title: event.type === 'button.click' ? 'Action processed' : 'Event processed',
+        subtitle: `event_id=${event.id}`,
+        blocks: [
+          { type: 'text', title: 'Type', text: event.type },
+          { type: 'text', title: 'Target', text: targetText },
+          { type: 'text', title: 'Timestamp', text: event.timestamp }
+        ]
+      }
+    }
+  });
+
+  return res.json(response);
 });
 
 const clientDistPath = path.resolve(process.cwd(), 'dist/client');
