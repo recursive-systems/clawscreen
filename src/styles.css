@@ -256,6 +256,12 @@ a:focus-visible,
   min-height: 0;
   overflow-y: auto;
   padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.scene-layout:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 4px;
 }
 
 .cards-grid {
@@ -637,6 +643,36 @@ pre {
   background: var(--bg-surface-dim);
   padding: var(--space-md);
   border-radius: var(--radius);
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.scene-card ul {
+  max-height: 20rem;
+  overflow: auto;
+  padding-right: 0.35rem;
+}
+
+.empty-card {
+  text-align: center;
+  border-style: dashed;
+}
+
+.skeleton-card {
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.skeleton-line {
+  height: 0.8rem;
+  border-radius: 999px;
+  margin-bottom: 0.7rem;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.08));
+  background-size: 200% 100%;
+  animation: skeletonSweep 1.2s linear infinite;
+}
+
+.skeleton-line.short {
+  width: 62%;
 }
 
 /* ================================================================
@@ -739,6 +775,16 @@ pre {
   50% {
     transform: scale(0.65);
     opacity: 0.7;
+  }
+}
+
+@keyframes skeletonSweep {
+  0% {
+    background-position: 0% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
   }
 }
 

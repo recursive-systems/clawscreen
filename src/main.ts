@@ -11,7 +11,7 @@ import { applyEnvelopeBatch } from './protocol/applyMessages';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 130_000;
 const MAX_RETRIES = 2;
 const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 
@@ -128,9 +128,20 @@ function formatClock() {
 
 function setUiState(nextState: string, message?: string) {
   els.app.dataset.state = nextState;
+  els.renderSurface.setAttribute('aria-busy', nextState === 'thinking' || nextState === 'rendering' ? 'true' : 'false');
   const labels: Record<string, string> = { idle: 'Idle', thinking: 'Thinking…', rendering: 'Rendering…', ready: 'Ready', error: 'Error' };
   els.stateBadge.textContent = labels[nextState] || nextState;
   if (message) els.status.textContent = message;
+}
+
+function renderLoadingSkeleton(cardCount = 3) {
+  els.renderSurface.innerHTML = '';
+  for (let index = 0; index < cardCount; index += 1) {
+    const article = document.createElement('article');
+    article.className = 'scene-card size-medium skeleton-card';
+    article.innerHTML = '<div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line"></div>';
+    els.renderSurface.appendChild(article);
+  }
 }
 
 const persistLkg = (payload: A2UICompatiblePayload) => localStorage.setItem(A2UI_STORAGE_KEY, JSON.stringify(payload));
@@ -191,19 +202,97 @@ function withTimeout<T>(ms: number, promise: Promise<T>): Promise<T> {
   });
 }
 
-async function requestA2ui(prompt: string, endpoint: string): Promise<unknown> {
-  const requestBody = {
+function buildRequestBody(prompt: string) {
+  return {
     prompt,
     input: prompt,
     request: prompt,
     schemaVersion: '0.8',
     context: { now: nowIso(), appVersion: APP_VERSION, previousSummary: state.lastPayload?.screen?.title || null }
   };
+}
 
+type StreamCallbacks = {
+  onStatus: (text: string) => void;
+  onPartial?: (payload: unknown) => void;
+};
+
+async function requestA2uiStreaming(prompt: string, endpoint: string, callbacks: StreamCallbacks): Promise<unknown> {
+  const { onStatus, onPartial } = callbacks;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(buildRequestBody(prompt)),
+      signal: controller.signal
+    });
+
+    if (!res.ok) throw new Error(`${endpoint} responded ${res.status}`);
+    const contentType = res.headers.get('content-type') || '';
+
+    // If server doesn't support SSE, fall back to JSON
+    if (!contentType.includes('text/event-stream')) {
+      if (contentType.includes('application/json')) return res.json();
+      return res.text();
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: unknown = null;
+    let errorMsg = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+            if (eventType === 'status' && parsed.text) {
+              onStatus(parsed.text);
+            } else if (eventType === 'partial' && onPartial) {
+              onPartial(parsed);
+            } else if (eventType === 'result') {
+              result = parsed;
+            } else if (eventType === 'error') {
+              errorMsg = parsed.message || 'Generation failed';
+            }
+          } catch { /* ignore malformed events */ }
+          eventType = '';
+        } else if (line === '') {
+          eventType = '';
+        }
+      }
+    }
+
+    if (errorMsg) throw new Error(errorMsg);
+    if (!result) throw new Error('No result received from stream');
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestA2ui(prompt: string, endpoint: string): Promise<unknown> {
   const res = await withTimeout(REQUEST_TIMEOUT_MS, fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain' },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(buildRequestBody(prompt))
   }));
 
   if (!res.ok) throw new Error(`${endpoint} responded ${res.status}`);
@@ -212,11 +301,14 @@ async function requestA2ui(prompt: string, endpoint: string): Promise<unknown> {
   return res.text();
 }
 
-async function generateA2ui(prompt: string): Promise<unknown> {
+async function generateA2ui(prompt: string, callbacks?: StreamCallbacks): Promise<unknown> {
   const failures: string[] = [];
   for (const endpoint of A2UI_ENDPOINT_CANDIDATES) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
       try {
+        if (callbacks) {
+          return await requestA2uiStreaming(prompt, endpoint, callbacks);
+        }
         return await requestA2ui(prompt, endpoint);
       } catch (err) {
         failures.push(`${endpoint} attempt ${attempt}: ${(err as Error).message}`);
@@ -237,6 +329,11 @@ function getNodeSizeClass(node: unknown): string {
 }
 
 function syncRenderSurface(nodesToRender: unknown[]) {
+  if (!nodesToRender.length) {
+    els.renderSurface.innerHTML = '<article class="scene-card size-large empty-card"><h3>No blocks returned</h3><p class="muted">Try a more specific prompt to generate a richer layout.</p></article>';
+    return;
+  }
+
   const existing = Array.from(els.renderSurface.children) as HTMLElement[];
 
   nodesToRender.forEach((node, index) => {
@@ -251,6 +348,7 @@ function syncRenderSurface(nodesToRender: unknown[]) {
         article.dataset.blockType = String((node as { type?: unknown }).type || 'unknown');
       }
       article.innerHTML = html;
+      article.tabIndex = index === 0 ? 0 : -1;
       els.renderSurface.appendChild(article);
       return;
     }
@@ -261,6 +359,7 @@ function syncRenderSurface(nodesToRender: unknown[]) {
     } else {
       delete current.dataset.blockType;
     }
+    current.tabIndex = index === 0 ? 0 : -1;
     if (current.innerHTML !== html) current.innerHTML = html;
   });
 
@@ -303,10 +402,21 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
   state.lastPrompt = trimmed;
   state.lastError = null;
-  setUiState('thinking', 'Thinking… generating A2UI payload');
+  setUiState('thinking', 'Connecting…');
 
   try {
-    const payload = await generateA2ui(trimmed);
+    renderLoadingSkeleton();
+    const payload = await generateA2ui(trimmed, {
+      onStatus: (statusText) => {
+        setUiState('thinking', statusText);
+      },
+      onPartial: (partialPayload) => {
+        try {
+          renderA2ui(partialPayload, 'partial');
+          setUiState('thinking', 'Streaming partial update…');
+        } catch { /* ignore partial render failures */ }
+      }
+    });
     renderA2ui(payload, source);
   } catch (err) {
     state.lastError = err as Error;
