@@ -9,12 +9,20 @@ lanes:
     outcome: Agentic interaction loop (event -> LLM-decided next UI)
   - id: trust_ux
     outcome: Source/freshness/explainability in every surface
+  - id: ui_polish
+    outcome: Cohesive, premium HUD quality and clear visual hierarchy under dynamic generation
 
 backlog:
+  # execution metadata:
+  # - status: todo|ready|in_progress|blocked|done
+  # - owner: single accountable owner while in_progress (optional when todo/ready)
+  # - target_date: YYYY-MM-DD for active items when known
   - id: REL-001
     lane: reliability
     title: Gateway polling termination hardening
     priority: P0
+    status: done
+    last_updated: 2026-02-27
     acceptance:
       - No long polling after terminal assistant stop without parseable JSON
       - Clear retry reason surfaced to UI
@@ -23,14 +31,29 @@ backlog:
     lane: interaction
     title: Phase B event envelope contract
     priority: P0
+    status: ready
+    last_updated: 2026-02-28
     acceptance:
       - Define action event schema and response schema
       - Add validator + fixtures + tests
       - Preserve /a2ui/generate compatibility
+  - id: INT-004
+    lane: interaction
+    title: Task lifecycle + streaming status contract (queued/running/input_required/completed/failed)
+    priority: P0
+    status: ready
+    last_updated: 2026-02-28
+    acceptance:
+      - Extend action response envelope with task_id, status, progress message, and terminal artifact/error
+      - Support incremental status updates over SSE/WebSocket without breaking current POST flow
+      - Include input_required handoff signal for human takeover (auth/payment/captcha)
+      - Validator + fixtures + tests for lifecycle transitions
   - id: INT-002
     lane: interaction
     title: Client model store + path bindings
     priority: P1
+    status: todo
+    last_updated: 2026-02-28
     acceptance:
       - Path read/write utilities with tests
       - Controlled state updates for interactive components
@@ -38,6 +61,8 @@ backlog:
     lane: interaction
     title: Button action dispatch loop
     priority: P1
+    status: todo
+    last_updated: 2026-02-28
     acceptance:
       - POST /a2ui/action with action + model snapshot
       - Apply response through incremental pipeline
@@ -45,9 +70,43 @@ backlog:
     lane: trust_ux
     title: Source and freshness badges
     priority: P1
+    status: todo
+    last_updated: 2026-02-28
     acceptance:
       - Show data source per major block group when available
       - Last-updated timestamp at screen level
+  - id: TRUST-002
+    lane: trust_ux
+    title: Action provenance + human-control affordances
+    priority: P0
+    status: ready
+    last_updated: 2026-03-01
+    acceptance:
+      - Display per-action provenance (initiator, tool/source, timestamp, confidence)
+      - Provide explicit pause/resume/takeover controls on active tasks
+      - Log user approvals for sensitive steps (login/payment/submit)
+  - id: UI-001
+    lane: ui_polish
+    title: Frontend polish pass for dynamic A2UI surfaces
+    priority: P0
+    status: ready
+    last_updated: 2026-03-03
+    acceptance:
+      - Improve visual hierarchy/readability across mixed block types (section/row/column/image/metric/list)
+      - Ensure long content gracefully wraps/scrolls without clipping or layout collapse
+      - Standardize loading/error/streaming states with clear user feedback
+      - Validate responsive behavior and keyboard focus states
+      - Keep functionality unchanged; pass tests/typecheck/build
+  - id: INT-005
+    lane: interaction
+    title: A2UI modality negotiation + structured input contract
+    priority: P1
+    status: ready
+    last_updated: 2026-03-01
+    acceptance:
+      - Extend action/task envelope with supported modalities (text/form/file/media) and negotiated response mode
+      - Add input_required payload schema for deterministic human handoff (reason, required_fields, resume_token)
+      - Validator + fixtures + tests for modality negotiation and resume flow compatibility
 
 quality_gates:
   - npm test
