@@ -270,24 +270,22 @@ a:focus-visible,
 }
 
 #generateBtn.is-loading {
-  position: relative;
-  padding-left: 2.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 #generateBtn.is-loading::before {
   content: '';
-  position: absolute;
-  left: 0.85rem;
-  top: 50%;
+  display: inline-block;
   width: 0.9rem;
   height: 0.9rem;
-  margin-top: -0.45rem;
   border: 2px solid rgba(255, 255, 255, 0.45);
   border-top-color: #fff;
   border-radius: 999px;
   animation: generate-spin 0.8s linear infinite;
 }
-
 #retryBtn,
 #showRawBtn {
   background: transparent;
