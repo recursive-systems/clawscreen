@@ -107,6 +107,28 @@ backlog:
       - Extend action/task envelope with supported modalities (text/form/file/media) and negotiated response mode
       - Add input_required payload schema for deterministic human handoff (reason, required_fields, resume_token)
       - Validator + fixtures + tests for modality negotiation and resume flow compatibility
+  - id: UI-002
+    lane: ui_polish
+    title: Non-technical first-run UX simplification
+    priority: P0
+    status: ready
+    last_updated: 2026-03-04
+    acceptance:
+      - Remove duplicate thinking indicators; unify into one primary status area
+      - Hide raw JSON behind advanced/debug affordance (not primary CTA)
+      - Improve plain-language copy for generation, errors, and fallback states
+      - Keep current functionality and pass quality gates
+  - id: UX-003
+    lane: ui_polish
+    title: Saved screens and profile tabs
+    priority: P0
+    status: ready
+    last_updated: 2026-03-04
+    acceptance:
+      - Add ability to save named screens/profiles and switch via tabs
+      - Persist profile definitions and current active tab locally
+      - Support manual refresh and optional auto-refresh cadence per profile
+      - Maintain compatibility with existing generation flow and quality gates
 
 quality_gates:
   - npm test
