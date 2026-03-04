@@ -25,6 +25,8 @@ const els = {
   title: document.getElementById('sceneTitle') as HTMLElement,
   subtitle: document.getElementById('sceneSubtitle') as HTMLElement,
   status: document.getElementById('statusBar') as HTMLElement,
+  statusTitle: document.getElementById('statusTitle') as HTMLElement,
+  statusMessage: document.getElementById('statusMessage') as HTMLElement,
   promptInput: document.getElementById('promptInput') as HTMLInputElement,
   submitBtn: document.getElementById('generateBtn') as HTMLButtonElement,
   retryBtn: document.getElementById('retryBtn') as HTMLButtonElement,
@@ -128,7 +130,17 @@ function formatClock() {
 function setUiState(nextState: string, message?: string) {
   els.app.dataset.state = nextState;
   els.renderSurface.setAttribute('aria-busy', nextState === 'thinking' || nextState === 'rendering' ? 'true' : 'false');
-  if (message) els.status.textContent = message;
+
+  const titleByState: Record<string, string> = {
+    idle: 'Ready',
+    thinking: 'Thinking',
+    rendering: 'Building screen',
+    ready: 'Updated',
+    error: 'Needs attention'
+  };
+
+  els.statusTitle.textContent = titleByState[nextState] || 'Status';
+  if (message) els.statusMessage.textContent = message;
 }
 
 function renderLoadingSkeleton(cardCount = 3) {
@@ -399,18 +411,20 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
   state.lastPrompt = trimmed;
   state.lastError = null;
-  setUiState('thinking', 'Thinking through your request…');
+  els.submitBtn.disabled = true;
+  els.retryBtn.disabled = true;
+  setUiState('thinking', 'Reviewing your request and preparing a screen layout…');
 
   try {
     renderLoadingSkeleton();
     const payload = await generateA2ui(trimmed, {
       onStatus: (_statusText) => {
-        setUiState('thinking', 'Still working on your screen…');
+        setUiState('thinking', 'Still generating — this can take up to a minute on complex requests.');
       },
       onPartial: (partialPayload) => {
         try {
           renderA2ui(partialPayload, 'partial');
-          setUiState('thinking', 'Updating your screen…');
+          setUiState('rendering', 'Live updates are arriving. Finalizing the full screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
@@ -419,7 +433,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     state.lastError = err as Error;
     try {
       renderA2ui(heuristicPayloadFromPrompt(trimmed), 'local-heuristic');
-      setUiState('ready', 'Live generation is temporarily unavailable, so we built a local version for now.');
+      setUiState('error', 'Live generation is unavailable right now. Showing a local draft so you can keep moving.');
       return;
     } catch {
       // continue fallback chain
@@ -429,7 +443,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     if (lkg && isSafePayload(lkg)) {
       try {
         renderA2ui(lkg, 'last-known-good');
-        setUiState('error', 'We hit a snag, so we loaded your last good screen. You can retry anytime.');
+        setUiState('error', 'We could not refresh, so we restored your last working screen. Press Retry to try again.');
         return;
       } catch {
         // continue to offline fallback
@@ -438,10 +452,13 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
     try {
       renderA2ui(offlineFallbackPayload, 'offline-fallback');
-      setUiState('error', 'We could not generate live content, so we switched to offline fallback. Please try again.');
+      setUiState('error', 'Could not reach live generation. You are seeing offline fallback content for now.');
     } catch {
-      setUiState('error', 'Something went wrong and we could not recover automatically. Please retry.');
+      setUiState('error', 'We hit an unrecoverable error. Please Retry in a moment.');
     }
+  } finally {
+    els.submitBtn.disabled = false;
+    els.retryBtn.disabled = false;
   }
 }
 

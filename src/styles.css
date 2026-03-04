@@ -242,6 +242,11 @@ button:hover {
   background-color: var(--accent-dim);
 }
 
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -706,39 +711,46 @@ pre {
 }
 
 /* ================================================================
-   Status bar
+   Primary status area
    ================================================================ */
 
 .status {
-  padding: var(--space-sm) 0.2rem;
-  border-radius: 0;
-  background: transparent;
-  border: none;
-  border-top: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  padding: 0.8rem 1rem;
+  display: grid;
+  gap: 0.2rem;
+  transition: border-color 200ms ease, background-color 200ms ease;
+}
+
+.status-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.status-message {
+  color: var(--text-primary);
   font-size: var(--text-sm);
-  color: var(--text-tertiary);
-  position: relative;
-  overflow: hidden;
-  transition: color 200ms ease, border-top-color 200ms ease;
 }
 
-.status::before {
-  display: none;
-}
-
-.app[data-state='thinking'] .status {
-  border-top-color: var(--warn);
-  color: var(--warn);
-}
-
+.app[data-state='thinking'] .status,
 .app[data-state='rendering'] .status {
-  border-top-color: var(--ok);
-  color: var(--ok);
+  border-color: rgba(184, 134, 46, 0.4);
+  background: rgba(184, 134, 46, 0.08);
+}
+
+.app[data-state='ready'] .status {
+  border-color: rgba(74, 140, 106, 0.35);
+  background: rgba(74, 140, 106, 0.08);
 }
 
 .app[data-state='error'] .status {
-  border-top-color: var(--error);
-  color: var(--error);
+  border-color: rgba(194, 80, 74, 0.35);
+  background: rgba(194, 80, 74, 0.08);
 }
 
 /* ================================================================

@@ -35,19 +35,20 @@
 
         <div class="controls-row">
           <details class="advanced-tools">
-            <summary>Advanced / Debug</summary>
-            <button id="showRawBtn" type="button">View technical payload (JSON)</button>
+            <summary>Technical details (advanced)</summary>
+            <button id="showRawBtn" type="button">Open raw JSON payload</button>
           </details>
         </div>
+      </section>
+
+      <section id="statusBar" class="status" role="status" aria-live="polite">
+        <p id="statusTitle" class="status-title">Starting up</p>
+        <p id="statusMessage" class="status-message">Preparing your screen tools…</p>
       </section>
 
       <main class="scene-layout">
         <section id="sceneCards" class="cards-grid" aria-live="polite"></section>
       </main>
-
-      <footer id="statusBar" class="status" role="status" aria-live="polite">
-        Initializing…
-      </footer>
     </div>
 
     <dialog id="rawSceneDialog" class="raw-dialog">
