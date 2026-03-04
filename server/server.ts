@@ -230,7 +230,7 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, on
       '- metric: must include value',
       '- image: must include a valid https:// src URL',
       '- card/notes/text: must include non-empty text/body/content',
-      'If data is unavailable after attempting tools, state that clearly in a block and include the exact missing source.',
+      'If data is unavailable after attempting tools, use plain-language user-facing copy (no raw URLs, no internal error text). Example: "Some live data is unavailable right now."',
       'Keep response concise and dashboard-oriented.',
       feedback ? `Retry feedback: ${feedback}` : '',
       '',

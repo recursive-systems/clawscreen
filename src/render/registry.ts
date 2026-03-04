@@ -39,9 +39,33 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
+function humanizeMessageText(text: string): string {
+  const t = String(text || '').trim();
+  if (!t) return t;
+
+  if (/source missing:/i.test(t) || /fetch failed/i.test(t)) {
+    return 'Some live information is unavailable right now.';
+  }
+
+  if (/no connected calendar|calendar\/tasks source missing/i.test(t)) {
+    return 'Calendar or task data is not connected yet in this environment.';
+  }
+
+  return t;
+}
+
 function renderPrimitive(value: unknown): string {
   if (value == null) return '<span class="muted">—</span>';
-  if (['string', 'number', 'boolean'].includes(typeof value)) return escapeHtml(value);
+  if (typeof value === 'string') return escapeHtml(humanizeMessageText(value));
+  if (['number', 'boolean'].includes(typeof value)) return escapeHtml(value);
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const label = obj.label || obj.title || obj.name;
+    const detail = obj.text || obj.value || obj.summary || obj.description || obj.body || obj.content;
+    if (label && detail) return `${escapeHtml(label)}: ${escapeHtml(detail)}`;
+    if (label) return escapeHtml(label);
+    if (detail) return escapeHtml(detail);
+  }
   return `<pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
 }
 
