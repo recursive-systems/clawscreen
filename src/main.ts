@@ -25,7 +25,6 @@ const els = {
   title: document.getElementById('sceneTitle') as HTMLElement,
   subtitle: document.getElementById('sceneSubtitle') as HTMLElement,
   status: document.getElementById('statusBar') as HTMLElement,
-  stateBadge: document.getElementById('stateBadge') as HTMLElement,
   promptInput: document.getElementById('promptInput') as HTMLInputElement,
   submitBtn: document.getElementById('generateBtn') as HTMLButtonElement,
   retryBtn: document.getElementById('retryBtn') as HTMLButtonElement,
@@ -129,8 +128,6 @@ function formatClock() {
 function setUiState(nextState: string, message?: string) {
   els.app.dataset.state = nextState;
   els.renderSurface.setAttribute('aria-busy', nextState === 'thinking' || nextState === 'rendering' ? 'true' : 'false');
-  const labels: Record<string, string> = { idle: 'Idle', thinking: 'Thinking…', rendering: 'Rendering…', ready: 'Ready', error: 'Error' };
-  els.stateBadge.textContent = labels[nextState] || nextState;
   if (message) els.status.textContent = message;
 }
 
@@ -372,7 +369,7 @@ function renderA2ui(payload: unknown, source: string) {
   const normalized = normalizeA2uiPayload(payload, state.renderState);
   if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
 
-  setUiState('rendering', 'Rendering A2UI…');
+  setUiState('rendering', 'Building your screen…');
   const screen = normalized.payload.screen || {};
   const title = screen.title || screen.name || 'Dynamic Screen';
   const subtitle = screen.subtitle || `Generated from prompt at ${new Date().toLocaleTimeString()}`;
@@ -387,7 +384,7 @@ function renderA2ui(payload: unknown, source: string) {
   state.renderState = normalized.renderState;
   state.lastPayload = normalized.payload;
   persistLkg(normalized.payload);
-  setUiState('ready', `Rendered ${nodesToRender.length} block(s) from ${source} (${APP_VERSION})`);
+  setUiState('ready', `Screen ready. Showing ${nodesToRender.length} section${nodesToRender.length === 1 ? '' : 's'}.`);
 }
 
 function showRawPayload() {
@@ -402,18 +399,18 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
   state.lastPrompt = trimmed;
   state.lastError = null;
-  setUiState('thinking', 'Connecting…');
+  setUiState('thinking', 'Thinking through your request…');
 
   try {
     renderLoadingSkeleton();
     const payload = await generateA2ui(trimmed, {
-      onStatus: (statusText) => {
-        setUiState('thinking', statusText);
+      onStatus: (_statusText) => {
+        setUiState('thinking', 'Still working on your screen…');
       },
       onPartial: (partialPayload) => {
         try {
           renderA2ui(partialPayload, 'partial');
-          setUiState('thinking', 'Streaming partial update…');
+          setUiState('thinking', 'Updating your screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
@@ -422,7 +419,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     state.lastError = err as Error;
     try {
       renderA2ui(heuristicPayloadFromPrompt(trimmed), 'local-heuristic');
-      setUiState('ready', `Gateway generation unavailable; rendered dynamic local interpretation. (${(err as Error).message})`);
+      setUiState('ready', 'Live generation is temporarily unavailable, so we built a local version for now.');
       return;
     } catch {
       // continue fallback chain
@@ -432,7 +429,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     if (lkg && isSafePayload(lkg)) {
       try {
         renderA2ui(lkg, 'last-known-good');
-        setUiState('error', `Generation failed, showing last known good. Retry available. (${(err as Error).message})`);
+        setUiState('error', 'We hit a snag, so we loaded your last good screen. You can retry anytime.');
         return;
       } catch {
         // continue to offline fallback
@@ -441,9 +438,9 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
     try {
       renderA2ui(offlineFallbackPayload, 'offline-fallback');
-      setUiState('error', `Generation failed, using offline fallback. Retry available. (${(err as Error).message})`);
+      setUiState('error', 'We could not generate live content, so we switched to offline fallback. Please try again.');
     } catch {
-      setUiState('error', `Generation failed and fallback render failed. (${(err as Error).message})`);
+      setUiState('error', 'Something went wrong and we could not recover automatically. Please retry.');
     }
   }
 }
@@ -480,7 +477,7 @@ function start() {
     renderA2ui(offlineFallbackPayload, 'startup-offline-fallback');
   }
 
-  setUiState('idle', 'Ready. Enter a prompt and press Generate.');
+  setUiState('idle', 'Ready when you are — type what you want to see and press Generate.');
 }
 
 start();

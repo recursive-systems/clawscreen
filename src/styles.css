@@ -178,6 +178,36 @@ h1,
   align-items: center;
 }
 
+.controls-row {
+  justify-content: flex-end;
+}
+
+.advanced-tools {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  padding: 0.3rem 0.55rem;
+}
+
+.advanced-tools summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  list-style: none;
+}
+
+.advanced-tools summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-tools[open] {
+  padding-bottom: 0.55rem;
+}
+
+.advanced-tools button {
+  margin-top: 0.45rem;
+}
+
 input,
 select,
 button {
