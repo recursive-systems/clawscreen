@@ -24,9 +24,6 @@ const els = {
   date: document.getElementById('dateDisplay') as HTMLElement,
   title: document.getElementById('sceneTitle') as HTMLElement,
   subtitle: document.getElementById('sceneSubtitle') as HTMLElement,
-  status: document.getElementById('statusBar') as HTMLElement,
-  statusTitle: document.getElementById('statusTitle') as HTMLElement,
-  statusMessage: document.getElementById('statusMessage') as HTMLElement,
   promptInput: document.getElementById('promptInput') as HTMLInputElement,
   submitBtn: document.getElementById('generateBtn') as HTMLButtonElement,
   retryBtn: document.getElementById('retryBtn') as HTMLButtonElement,
@@ -129,18 +126,16 @@ function formatClock() {
 
 function setUiState(nextState: string, message?: string) {
   els.app.dataset.state = nextState;
-  els.renderSurface.setAttribute('aria-busy', nextState === 'thinking' || nextState === 'rendering' ? 'true' : 'false');
+  const isBusy = nextState === 'thinking' || nextState === 'rendering';
+  els.renderSurface.setAttribute('aria-busy', isBusy ? 'true' : 'false');
 
-  const titleByState: Record<string, string> = {
-    idle: 'Ready',
-    thinking: 'Thinking',
-    rendering: 'Building screen',
-    ready: 'Updated',
-    error: 'Needs attention'
-  };
+  els.submitBtn.classList.toggle('is-loading', isBusy);
+  els.submitBtn.textContent = isBusy ? 'Generating…' : 'Generate';
+  els.submitBtn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
 
-  els.statusTitle.textContent = titleByState[nextState] || 'Status';
-  if (message) els.statusMessage.textContent = message;
+  if (message) {
+    els.app.setAttribute('aria-label', message);
+  }
 }
 
 function renderLoadingSkeleton(cardCount = 3) {
