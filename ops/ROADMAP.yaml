@@ -100,18 +100,31 @@ backlog:
   - id: INT-005
     lane: interaction
     title: A2UI modality negotiation + structured input contract
-    priority: P1
+    priority: P0
     status: ready
-    last_updated: 2026-03-01
+    last_updated: 2026-03-04
     acceptance:
       - Extend action/task envelope with supported modalities (text/form/file/media) and negotiated response mode
       - Add input_required payload schema for deterministic human handoff (reason, required_fields, resume_token)
       - Validator + fixtures + tests for modality negotiation and resume flow compatibility
+
+  - id: INT-006
+    lane: interaction
+    title: AG-UI/A2UI transport adapter + capability advertisement
+    priority: P1
+    status: todo
+    last_updated: 2026-03-04
+    acceptance:
+      - Add adapter layer for AG-UI event mapping to current action/task lifecycle envelopes
+      - Support client capability advertisement (supported components/modalities/version)
+      - Reject unsupported remote UI intents safely with actionable fallback payload
+      - Compatibility tests covering local POST flow and streaming updates
   - id: UI-002
     lane: ui_polish
     title: Non-technical first-run UX simplification
     priority: P0
-    status: ready
+    status: done
+    owner: clawscreen-product
     last_updated: 2026-03-04
     acceptance:
       - Remove duplicate thinking indicators; unify into one primary status area

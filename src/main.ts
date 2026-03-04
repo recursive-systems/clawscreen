@@ -31,7 +31,10 @@ const els = {
   rawDialog: document.getElementById('rawSceneDialog') as HTMLDialogElement,
   rawOutput: document.getElementById('rawSceneOutput') as HTMLElement,
   showRawBtn: document.getElementById('showRawBtn') as HTMLButtonElement,
-  rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement
+  rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement,
+  statusPill: document.getElementById('statusPill') as HTMLElement,
+  statusTitle: document.getElementById('statusTitle') as HTMLElement,
+  statusMessage: document.getElementById('statusMessage') as HTMLElement
 };
 
 const state: {
@@ -130,10 +133,30 @@ function setUiState(nextState: string, message?: string) {
   els.renderSurface.setAttribute('aria-busy', isBusy ? 'true' : 'false');
 
   els.submitBtn.classList.toggle('is-loading', isBusy);
-  els.submitBtn.textContent = isBusy ? 'Generating…' : 'Generate';
+  els.submitBtn.textContent = isBusy ? 'Working…' : 'Create screen';
   els.submitBtn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
 
+  const pillByState: Record<string, string> = {
+    idle: 'Ready',
+    thinking: 'Thinking',
+    rendering: 'Updating',
+    ready: 'Ready',
+    error: 'Needs attention'
+  };
+
+  const titleByState: Record<string, string> = {
+    idle: 'Screen status',
+    thinking: 'Preparing your screen',
+    rendering: 'Applying updates',
+    ready: 'Screen is up to date',
+    error: 'Could not fully refresh'
+  };
+
+  els.statusPill.textContent = pillByState[nextState] || 'Status';
+  els.statusTitle.textContent = titleByState[nextState] || 'Screen status';
+
   if (message) {
+    els.statusMessage.textContent = message;
     els.app.setAttribute('aria-label', message);
   }
 }
@@ -376,7 +399,7 @@ function renderA2ui(payload: unknown, source: string) {
   const normalized = normalizeA2uiPayload(payload, state.renderState);
   if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
 
-  setUiState('rendering', 'Building your screen…');
+  setUiState('rendering', 'Building your screen now…');
   const screen = normalized.payload.screen || {};
   const title = screen.title || screen.name || 'Dynamic Screen';
   const subtitle = screen.subtitle || `Generated from prompt at ${new Date().toLocaleTimeString()}`;
@@ -408,18 +431,18 @@ async function submitPrompt(prompt: string, source = 'prompt') {
   state.lastError = null;
   els.submitBtn.disabled = true;
   els.retryBtn.disabled = true;
-  setUiState('thinking', 'Reviewing your request and preparing a screen layout…');
+  setUiState('thinking', 'Got it — turning your request into a screen layout.');
 
   try {
     renderLoadingSkeleton();
     const payload = await generateA2ui(trimmed, {
       onStatus: (_statusText) => {
-        setUiState('thinking', 'Still generating — this can take up to a minute on complex requests.');
+        setUiState('thinking', 'Still working… complex requests can take about a minute.');
       },
       onPartial: (partialPayload) => {
         try {
           renderA2ui(partialPayload, 'partial');
-          setUiState('rendering', 'Live updates are arriving. Finalizing the full screen…');
+          setUiState('rendering', 'Live updates are in. Finalizing your full screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
@@ -428,7 +451,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     state.lastError = err as Error;
     try {
       renderA2ui(heuristicPayloadFromPrompt(trimmed), 'local-heuristic');
-      setUiState('error', 'Live generation is unavailable right now. Showing a local draft so you can keep moving.');
+      setUiState('error', 'Live generation is unavailable, so we made a local draft to keep you moving.');
       return;
     } catch {
       // continue fallback chain
@@ -438,7 +461,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     if (lkg && isSafePayload(lkg)) {
       try {
         renderA2ui(lkg, 'last-known-good');
-        setUiState('error', 'We could not refresh, so we restored your last working screen. Press Retry to try again.');
+        setUiState('error', 'Couldn’t refresh right now. We restored your last working screen. Choose Try again when ready.');
         return;
       } catch {
         // continue to offline fallback
@@ -447,9 +470,9 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
     try {
       renderA2ui(offlineFallbackPayload, 'offline-fallback');
-      setUiState('error', 'Could not reach live generation. You are seeing offline fallback content for now.');
+      setUiState('error', 'We can’t reach live generation, so you’re seeing offline fallback content for now.');
     } catch {
-      setUiState('error', 'We hit an unrecoverable error. Please Retry in a moment.');
+      setUiState('error', 'Something unexpected failed. Please choose Try again in a moment.');
     }
   } finally {
     els.submitBtn.disabled = false;
@@ -489,7 +512,7 @@ function start() {
     renderA2ui(offlineFallbackPayload, 'startup-offline-fallback');
   }
 
-  setUiState('idle', 'Ready when you are — type what you want to see and press Generate.');
+  setUiState('idle', 'Ready when you are — describe what you want and choose Create screen.');
 }
 
 start();

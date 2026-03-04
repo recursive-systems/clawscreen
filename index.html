@@ -29,16 +29,24 @@
             placeholder="Type naturally (example: Show me everything before leaving in 20 minutes)"
             autocomplete="off"
           />
-          <button id="generateBtn" type="button">Generate</button>
-          <button id="retryBtn" type="button">Retry</button>
+          <button id="generateBtn" type="button">Create screen</button>
+          <button id="retryBtn" type="button">Try again</button>
         </div>
 
         <div class="controls-row">
           <details class="advanced-tools">
-            <summary>Technical details (advanced)</summary>
-            <button id="showRawBtn" type="button">Open raw JSON payload</button>
+            <summary>Debug tools (advanced)</summary>
+            <button id="showRawBtn" type="button">View raw JSON payload</button>
           </details>
         </div>
+      </section>
+
+      <section class="status" aria-live="polite" aria-atomic="true">
+        <div class="status-line">
+          <span id="statusPill" class="state-label">Ready</span>
+          <span id="statusTitle" class="status-title">Screen status</span>
+        </div>
+        <p id="statusMessage" class="status-message">Describe what you want to see, then choose Create screen.</p>
       </section>
 
       <main class="scene-layout">
