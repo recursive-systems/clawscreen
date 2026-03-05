@@ -390,6 +390,7 @@ function renderProfileTabs() {
     tab.setAttribute('aria-selected', String(profile.id === state.activeProfileId));
     tab.setAttribute('aria-controls', 'sceneCards');
     tab.tabIndex = profile.id === state.activeProfileId ? 0 : -1;
+    tab.disabled = state.isSubmitting;
     tab.textContent = profile.name;
     if (profile.id === state.activeProfileId) tab.classList.add('is-active');
     tab.addEventListener('click', () => switchProfile(profile.id));
@@ -447,6 +448,11 @@ function refreshAutoRefreshTimer() {
 }
 
 function switchProfile(profileId: string) {
+  if (state.isSubmitting) {
+    setUiState('thinking', 'Please wait for the current screen to finish updating.');
+    return;
+  }
+
   state.activeProfileId = profileId;
   const profile = getActiveProfile();
   state.lastPrompt = profile.lastPrompt || '';
@@ -720,6 +726,18 @@ function showRawPayload() {
   els.rawDialog.showModal();
 }
 
+function setBusyControls(isBusy: boolean) {
+  els.submitBtn.disabled = isBusy;
+  els.retryBtn.disabled = isBusy;
+  els.saveProfileBtn.disabled = isBusy;
+  els.renameProfileBtn.disabled = isBusy;
+  els.deleteProfileBtn.disabled = isBusy;
+  els.refreshProfileBtn.disabled = isBusy;
+  els.autoRefreshEnabled.disabled = isBusy;
+  els.autoRefreshInterval.disabled = isBusy;
+  renderProfileTabs();
+}
+
 async function submitPrompt(prompt: string, source = 'prompt') {
   if (state.isSubmitting) return;
 
@@ -738,8 +756,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
   state.lastError = null;
   state.isSubmitting = true;
-  els.submitBtn.disabled = true;
-  els.retryBtn.disabled = true;
+  setBusyControls(true);
   setUiState('thinking', 'Got it — turning your request into a screen layout.');
 
   try {
@@ -786,8 +803,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     }
   } finally {
     state.isSubmitting = false;
-    els.submitBtn.disabled = false;
-    els.retryBtn.disabled = false;
+    setBusyControls(false);
   }
 }
 
