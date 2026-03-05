@@ -8,11 +8,13 @@ import {
 } from '../shared/a2ui';
 import { renderNode } from './render/registry';
 import { applyEnvelopeBatch } from './protocol/applyMessages';
+import { unwrapA2uiPayload } from './protocol/unwrapPayload';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
 const REQUEST_TIMEOUT_MS = 130_000;
 const MAX_RETRIES = 2;
+const MAX_PROMPT_LENGTH = 1200;
 const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 const PROFILES_STORAGE_KEY = 'clawscreen.screenProfiles.v1';
 
@@ -65,6 +67,7 @@ const state: {
   profiles: ScreenProfile[];
   activeProfileId: string;
   autoRefreshTimer: number | null;
+  isSubmitting: boolean;
 } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
@@ -72,7 +75,8 @@ const state: {
   lastError: null,
   profiles: [],
   activeProfileId: '',
-  autoRefreshTimer: null
+  autoRefreshTimer: null,
+  isSubmitting: false
 };
 
 const offlineFallbackPayload: A2UICompatiblePayload = {
@@ -288,8 +292,8 @@ function loadLkg(): A2UICompatiblePayload | null {
 function createProfile(name: string, lastPrompt = state.lastPrompt, payload: A2UICompatiblePayload | null = state.lastPayload): ScreenProfile {
   return {
     id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}`,
-    name,
-    lastPrompt,
+    name: sanitizeProfileName(name),
+    lastPrompt: String(lastPrompt || '').slice(0, MAX_PROMPT_LENGTH),
     lastPayload: payload,
     updatedAt: nowIso(),
     refreshIntervalSec: 60,
@@ -310,15 +314,47 @@ function persistProfiles() {
   localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify({ profiles: state.profiles, activeProfileId: state.activeProfileId }));
 }
 
+function sanitizeProfileName(input: unknown): string {
+  const name = String(input || '').trim().replace(/\s+/g, ' ').slice(0, 48);
+  return name || 'Saved screen';
+}
+
+function sanitizeLoadedProfile(candidate: unknown): ScreenProfile | null {
+  if (!isRecord(candidate)) return null;
+  const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}`);
+  const lastPromptRaw = typeof candidate.lastPrompt === 'string' ? candidate.lastPrompt : '';
+  const lastPrompt = lastPromptRaw.slice(0, MAX_PROMPT_LENGTH);
+  const lastPayload = candidate.lastPayload ?? null;
+  return {
+    id,
+    name: sanitizeProfileName(candidate.name),
+    lastPrompt,
+    lastPayload: lastPayload && isSafePayload(lastPayload) ? (lastPayload as A2UICompatiblePayload) : null,
+    updatedAt: typeof candidate.updatedAt === 'string' && candidate.updatedAt ? candidate.updatedAt : nowIso(),
+    refreshIntervalSec: [30, 60, 120, 300].includes(Number(candidate.refreshIntervalSec)) ? Number(candidate.refreshIntervalSec) : 60,
+    autoRefreshEnabled: Boolean(candidate.autoRefreshEnabled)
+  };
+}
+
 function loadProfiles() {
   try {
     const raw = localStorage.getItem(PROFILES_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { profiles?: ScreenProfile[]; activeProfileId?: string };
-    return parsed;
+    const parsed = JSON.parse(raw) as { profiles?: unknown[]; activeProfileId?: string };
+    const profiles = Array.isArray(parsed.profiles) ? parsed.profiles.map(sanitizeLoadedProfile).filter(Boolean) as ScreenProfile[] : [];
+    if (!profiles.length) return null;
+    const activeProfileId = typeof parsed.activeProfileId === 'string' ? parsed.activeProfileId : profiles[0].id;
+    return { profiles, activeProfileId };
   } catch {
     return null;
   }
+}
+
+function getFriendlyErrorMessage(error: Error): string {
+  const message = String(error?.message || '').toLowerCase();
+  if (message.includes('timed out') || message.includes('abort')) return 'This request took too long, so we showed a local draft instead.';
+  if (message.includes('failed to fetch') || message.includes('networkerror')) return 'We could not reach live generation, so we showed a local draft instead.';
+  return 'Live generation is unavailable, so we made a local draft to keep you moving.';
 }
 
 function getActiveProfile(): ScreenProfile {
@@ -361,6 +397,38 @@ function renderProfileTabs() {
   });
 }
 
+function focusProfileTab(profileId: string) {
+  const target = document.getElementById(`tab-${profileId}`) as HTMLButtonElement | null;
+  if (target) target.focus();
+}
+
+function handleProfileTabsKeydown(event: KeyboardEvent) {
+  const tabs = Array.from(els.profileTabs.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  if (!tabs.length) return;
+
+  const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+  const selectedIndex = currentIndex >= 0 ? currentIndex : 0;
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowLeft' || event.key === 'Home' || event.key === 'End') {
+    event.preventDefault();
+    let nextIndex = selectedIndex;
+    if (event.key === 'ArrowRight') nextIndex = (selectedIndex + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (selectedIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+    const tabId = tabs[nextIndex]?.id?.replace(/^tab-/, '');
+    if (tabId) {
+      switchProfile(tabId);
+      focusProfileTab(tabId);
+    }
+  }
+
+  if (event.key === 'Delete' && state.profiles.length > 1) {
+    event.preventDefault();
+    els.deleteProfileBtn.click();
+  }
+}
+
 function refreshAutoRefreshTimer() {
   if (state.autoRefreshTimer) {
     window.clearInterval(state.autoRefreshTimer);
@@ -372,6 +440,7 @@ function refreshAutoRefreshTimer() {
   els.autoRefreshInterval.value = String(cadence);
   if (profile.autoRefreshEnabled) {
     state.autoRefreshTimer = window.setInterval(() => {
+      if (state.isSubmitting) return;
       submitPrompt(getActiveProfile().lastPrompt || els.promptInput.value, 'auto-refresh');
     }, cadence * 1000);
   }
@@ -652,34 +721,47 @@ function showRawPayload() {
 }
 
 async function submitPrompt(prompt: string, source = 'prompt') {
-  const trimmed = (prompt || '').trim();
-  if (!trimmed) return;
+  if (state.isSubmitting) return;
 
-  state.lastPrompt = trimmed;
+  const trimmed = (prompt || '').trim();
+  if (!trimmed) {
+    setUiState('error', 'Please enter what you want to see first. Example: “Show my top 3 priorities for today.”');
+    els.promptInput.focus();
+    return;
+  }
+
+  const normalizedPrompt = trimmed.slice(0, MAX_PROMPT_LENGTH);
+  state.lastPrompt = normalizedPrompt;
+  if (trimmed.length > MAX_PROMPT_LENGTH) {
+    setUiState('thinking', `Long prompt detected — we used the first ${MAX_PROMPT_LENGTH} characters for reliability.`);
+  }
+
   state.lastError = null;
+  state.isSubmitting = true;
   els.submitBtn.disabled = true;
   els.retryBtn.disabled = true;
   setUiState('thinking', 'Got it — turning your request into a screen layout.');
 
   try {
     renderLoadingSkeleton();
-    const payload = await generateA2ui(trimmed, {
+    const payload = await generateA2ui(normalizedPrompt, {
       onStatus: (_statusText) => {
         setUiState('thinking', 'Still working… complex requests can take about a minute.');
       },
       onPartial: (partialPayload) => {
         try {
-          renderA2ui(partialPayload, 'partial');
+          renderA2ui(unwrapA2uiPayload(partialPayload), 'partial');
           setUiState('rendering', 'Live updates are in. Finalizing your full screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
-    renderA2ui(payload, source);
+    renderA2ui(unwrapA2uiPayload(payload), source);
   } catch (err) {
     state.lastError = err as Error;
+    const fallbackMessage = getFriendlyErrorMessage(state.lastError);
     try {
-      renderA2ui(heuristicPayloadFromPrompt(trimmed), 'local-heuristic');
-      setUiState('error', 'Live generation is unavailable, so we made a local draft to keep you moving.');
+      renderA2ui(heuristicPayloadFromPrompt(normalizedPrompt), 'local-heuristic');
+      setUiState('error', fallbackMessage);
       return;
     } catch {
       // continue fallback chain
@@ -703,12 +785,14 @@ async function submitPrompt(prompt: string, source = 'prompt') {
       setUiState('error', 'Something unexpected failed. Please choose Try again in a moment.');
     }
   } finally {
+    state.isSubmitting = false;
     els.submitBtn.disabled = false;
     els.retryBtn.disabled = false;
   }
 }
 
 function wire() {
+  els.profileTabs.addEventListener('keydown', handleProfileTabsKeydown);
   els.submitBtn.addEventListener('click', () => submitPrompt(els.promptInput.value, 'prompt'));
   els.promptInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -731,11 +815,12 @@ function wire() {
 
   els.renameProfileBtn.addEventListener('click', () => {
     const active = getActiveProfile();
-    const renamed = window.prompt('Rename this tab', active.name)?.trim();
-    if (!renamed) {
+    const renamedInput = window.prompt('Rename this tab', active.name);
+    if (renamedInput == null) {
       setUiState('ready', 'Rename canceled.');
       return;
     }
+    const renamed = sanitizeProfileName(renamedInput);
     updateActiveProfile((profile) => ({ ...profile, name: renamed, updatedAt: nowIso() }));
     renderProfileTabs();
     setUiState('ready', `Tab renamed to “${renamed}”.`);
@@ -756,6 +841,7 @@ function wire() {
     state.activeProfileId = state.profiles[0].id;
     renderProfileTabs();
     switchProfile(state.activeProfileId);
+    focusProfileTab(state.activeProfileId);
     setUiState('ready', 'Tab deleted.');
   });
 
