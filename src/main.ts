@@ -14,6 +14,17 @@ const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}
 const REQUEST_TIMEOUT_MS = 130_000;
 const MAX_RETRIES = 2;
 const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
+const PROFILES_STORAGE_KEY = 'clawscreen.screenProfiles.v1';
+
+type ScreenProfile = {
+  id: string;
+  name: string;
+  lastPrompt: string;
+  lastPayload: A2UICompatiblePayload | null;
+  updatedAt: string;
+  refreshIntervalSec?: number;
+  autoRefreshEnabled?: boolean;
+};
 
 type Primitive = string | number | boolean | null | undefined;
 type Json = Primitive | Json[] | { [key: string]: Json };
@@ -27,6 +38,13 @@ const els = {
   promptInput: document.getElementById('promptInput') as HTMLInputElement,
   submitBtn: document.getElementById('generateBtn') as HTMLButtonElement,
   retryBtn: document.getElementById('retryBtn') as HTMLButtonElement,
+  profileTabs: document.getElementById('profileTabs') as HTMLElement,
+  saveProfileBtn: document.getElementById('saveProfileBtn') as HTMLButtonElement,
+  renameProfileBtn: document.getElementById('renameProfileBtn') as HTMLButtonElement,
+  deleteProfileBtn: document.getElementById('deleteProfileBtn') as HTMLButtonElement,
+  refreshProfileBtn: document.getElementById('refreshProfileBtn') as HTMLButtonElement,
+  autoRefreshEnabled: document.getElementById('autoRefreshEnabled') as HTMLInputElement,
+  autoRefreshInterval: document.getElementById('autoRefreshInterval') as HTMLSelectElement,
   renderSurface: document.getElementById('sceneCards') as HTMLElement,
   rawDialog: document.getElementById('rawSceneDialog') as HTMLDialogElement,
   rawOutput: document.getElementById('rawSceneOutput') as HTMLElement,
@@ -42,11 +60,17 @@ const state: {
   lastPayload: A2UICompatiblePayload | null;
   renderState: A2UIRenderState;
   lastError: Error | null;
+  profiles: ScreenProfile[];
+  activeProfileId: string;
+  autoRefreshTimer: number | null;
 } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
   renderState: createInitialRenderState('0.8'),
-  lastError: null
+  lastError: null,
+  profiles: [],
+  activeProfileId: '',
+  autoRefreshTimer: null
 };
 
 const offlineFallbackPayload: A2UICompatiblePayload = {
@@ -180,6 +204,109 @@ function loadLkg(): A2UICompatiblePayload | null {
   } catch {
     return null;
   }
+}
+
+function createProfile(name: string, lastPrompt = state.lastPrompt, payload: A2UICompatiblePayload | null = state.lastPayload): ScreenProfile {
+  return {
+    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}`,
+    name,
+    lastPrompt,
+    lastPayload: payload,
+    updatedAt: nowIso(),
+    refreshIntervalSec: 60,
+    autoRefreshEnabled: false
+  };
+}
+
+function persistProfiles() {
+  localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify({ profiles: state.profiles, activeProfileId: state.activeProfileId }));
+}
+
+function loadProfiles() {
+  try {
+    const raw = localStorage.getItem(PROFILES_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { profiles?: ScreenProfile[]; activeProfileId?: string };
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function getActiveProfile(): ScreenProfile {
+  const active = state.profiles.find((profile) => profile.id === state.activeProfileId);
+  if (active) return active;
+  const fallback = state.profiles[0];
+  if (!fallback) {
+    const created = createProfile('Main screen');
+    state.profiles = [created];
+    state.activeProfileId = created.id;
+    return created;
+  }
+  state.activeProfileId = fallback.id;
+  return fallback;
+}
+
+function updateActiveProfile(updater: (profile: ScreenProfile) => ScreenProfile) {
+  state.profiles = state.profiles.map((profile) => {
+    if (profile.id !== state.activeProfileId) return profile;
+    return updater(profile);
+  });
+  persistProfiles();
+}
+
+function renderProfileTabs() {
+  els.profileTabs.innerHTML = '';
+  state.profiles.forEach((profile) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'profile-tab';
+    tab.setAttribute('role', 'tab');
+    tab.id = `tab-${profile.id}`;
+    tab.setAttribute('aria-selected', String(profile.id === state.activeProfileId));
+    tab.setAttribute('aria-controls', 'sceneCards');
+    tab.tabIndex = profile.id === state.activeProfileId ? 0 : -1;
+    tab.textContent = profile.name;
+    if (profile.id === state.activeProfileId) tab.classList.add('is-active');
+    tab.addEventListener('click', () => switchProfile(profile.id));
+    els.profileTabs.appendChild(tab);
+  });
+}
+
+function refreshAutoRefreshTimer() {
+  if (state.autoRefreshTimer) {
+    window.clearInterval(state.autoRefreshTimer);
+    state.autoRefreshTimer = null;
+  }
+  const profile = getActiveProfile();
+  const cadence = profile.refreshIntervalSec || 60;
+  els.autoRefreshEnabled.checked = Boolean(profile.autoRefreshEnabled);
+  els.autoRefreshInterval.value = String(cadence);
+  if (profile.autoRefreshEnabled) {
+    state.autoRefreshTimer = window.setInterval(() => {
+      submitPrompt(getActiveProfile().lastPrompt || els.promptInput.value, 'auto-refresh');
+    }, cadence * 1000);
+  }
+}
+
+function switchProfile(profileId: string) {
+  state.activeProfileId = profileId;
+  const profile = getActiveProfile();
+  state.lastPrompt = profile.lastPrompt || '';
+  state.lastPayload = profile.lastPayload || null;
+  els.promptInput.value = profile.lastPrompt || '';
+
+  if (profile.lastPayload && isSafePayload(profile.lastPayload)) {
+    renderA2ui(profile.lastPayload, 'profile-switch');
+    setUiState('ready', `Showing ${profile.name}.`);
+  } else {
+    renderA2ui(offlineFallbackPayload, 'profile-switch-empty');
+    setUiState('idle', `${profile.name} is ready. Add a prompt and create a screen.`);
+  }
+
+  renderProfileTabs();
+  refreshAutoRefreshTimer();
+  persistProfiles();
 }
 
 function isSafePayload(payload: unknown): boolean {
@@ -414,6 +541,18 @@ function renderA2ui(payload: unknown, source: string) {
   state.renderState = normalized.renderState;
   state.lastPayload = normalized.payload;
   persistLkg(normalized.payload);
+
+  const shouldPersistProfilePayload = source !== 'profile-switch-empty' && source !== 'startup-offline-fallback';
+  if (shouldPersistProfilePayload) {
+    updateActiveProfile((profile) => ({
+      ...profile,
+      lastPrompt: state.lastPrompt,
+      lastPayload: normalized.payload,
+      updatedAt: nowIso()
+    }));
+    renderProfileTabs();
+  }
+
   setUiState('ready', `Screen ready. Showing ${nodesToRender.length} section${nodesToRender.length === 1 ? '' : 's'}.`);
 }
 
@@ -489,7 +628,59 @@ function wire() {
     }
   });
 
-  els.retryBtn.addEventListener('click', () => submitPrompt(state.lastPrompt, 'retry'));
+  els.retryBtn.addEventListener('click', () => submitPrompt(getActiveProfile().lastPrompt || state.lastPrompt, 'retry'));
+  els.saveProfileBtn.addEventListener('click', () => {
+    const suggested = `Screen ${state.profiles.length + 1}`;
+    const name = window.prompt('Name this new tab', suggested)?.trim();
+    if (!name) return;
+    const next = createProfile(name, state.lastPrompt, state.lastPayload);
+    state.profiles.push(next);
+    state.activeProfileId = next.id;
+    renderProfileTabs();
+    refreshAutoRefreshTimer();
+    persistProfiles();
+    setUiState('ready', `${name} saved. You can switch tabs any time.`);
+  });
+
+  els.renameProfileBtn.addEventListener('click', () => {
+    const active = getActiveProfile();
+    const renamed = window.prompt('Rename this tab', active.name)?.trim();
+    if (!renamed) return;
+    updateActiveProfile((profile) => ({ ...profile, name: renamed, updatedAt: nowIso() }));
+    renderProfileTabs();
+    setUiState('ready', `Renamed tab to ${renamed}.`);
+  });
+
+  els.deleteProfileBtn.addEventListener('click', () => {
+    if (state.profiles.length <= 1) {
+      setUiState('error', 'Keep at least one tab so your screens have a home.');
+      return;
+    }
+    const active = getActiveProfile();
+    const confirmed = window.confirm(`Delete “${active.name}”? This cannot be undone.`);
+    if (!confirmed) return;
+    state.profiles = state.profiles.filter((profile) => profile.id !== active.id);
+    state.activeProfileId = state.profiles[0].id;
+    renderProfileTabs();
+    switchProfile(state.activeProfileId);
+  });
+
+  els.refreshProfileBtn.addEventListener('click', () => {
+    const active = getActiveProfile();
+    submitPrompt(active.lastPrompt || els.promptInput.value, 'profile-refresh');
+  });
+
+  els.autoRefreshEnabled.addEventListener('change', () => {
+    updateActiveProfile((profile) => ({ ...profile, autoRefreshEnabled: els.autoRefreshEnabled.checked, updatedAt: nowIso() }));
+    refreshAutoRefreshTimer();
+  });
+
+  els.autoRefreshInterval.addEventListener('change', () => {
+    const refreshIntervalSec = Number(els.autoRefreshInterval.value);
+    updateActiveProfile((profile) => ({ ...profile, refreshIntervalSec, updatedAt: nowIso() }));
+    refreshAutoRefreshTimer();
+  });
+
   els.showRawBtn.addEventListener('click', showRawPayload);
   els.rawCloseBtn.addEventListener('click', () => els.rawDialog.close());
 }
@@ -498,20 +689,41 @@ function start() {
   formatClock();
   setInterval(formatClock, 1000);
 
-  wire();
-  els.promptInput.value = state.lastPrompt;
-
-  const lkg = loadLkg();
-  if (lkg && isSafePayload(lkg)) {
-    try {
-      renderA2ui(lkg, 'startup-lkg');
-    } catch {
-      renderA2ui(offlineFallbackPayload, 'startup-offline-fallback');
-    }
+  const savedProfiles = loadProfiles();
+  if (savedProfiles?.profiles?.length) {
+    state.profiles = savedProfiles.profiles;
+    state.activeProfileId = savedProfiles.activeProfileId || savedProfiles.profiles[0].id;
   } else {
-    renderA2ui(offlineFallbackPayload, 'startup-offline-fallback');
+    const initial = createProfile('Main screen', state.lastPrompt, null);
+    state.profiles = [initial];
+    state.activeProfileId = initial.id;
+    persistProfiles();
   }
 
+  wire();
+  renderProfileTabs();
+
+  const active = getActiveProfile();
+  state.lastPrompt = active.lastPrompt;
+  state.lastPayload = active.lastPayload;
+  els.promptInput.value = active.lastPrompt;
+
+  if (active.lastPayload && isSafePayload(active.lastPayload)) {
+    renderA2ui(active.lastPayload, 'startup-profile');
+  } else {
+    const lkg = loadLkg();
+    if (lkg && isSafePayload(lkg)) {
+      try {
+        renderA2ui(lkg, 'startup-lkg');
+      } catch {
+        renderA2ui(offlineFallbackPayload, 'startup-offline-fallback');
+      }
+    } else {
+      renderA2ui(offlineFallbackPayload, 'startup-offline-fallback');
+    }
+  }
+
+  refreshAutoRefreshTimer();
   setUiState('idle', 'Ready when you are — describe what you want and choose Create screen.');
 }
 

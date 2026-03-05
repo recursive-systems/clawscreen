@@ -21,6 +21,32 @@
         </div>
       </header>
 
+      <section class="profile-bar" aria-label="Saved screens">
+        <div class="profile-bar-head">
+          <p class="label">Saved screens</p>
+          <div class="profile-actions">
+            <button id="saveProfileBtn" type="button">Save as new tab</button>
+            <button id="renameProfileBtn" type="button">Rename tab</button>
+            <button id="deleteProfileBtn" type="button">Delete tab</button>
+          </div>
+        </div>
+        <div id="profileTabs" class="profile-tabs" role="tablist" aria-label="Screen tabs"></div>
+        <div class="profile-refresh-row">
+          <button id="refreshProfileBtn" type="button">Refresh this tab</button>
+          <label class="auto-refresh-toggle" for="autoRefreshEnabled">
+            <input id="autoRefreshEnabled" type="checkbox" />
+            Auto refresh
+          </label>
+          <label for="autoRefreshInterval" class="auto-refresh-label">Every</label>
+          <select id="autoRefreshInterval" aria-label="Auto refresh interval">
+            <option value="30">30 sec</option>
+            <option value="60" selected>60 sec</option>
+            <option value="120">2 min</option>
+            <option value="300">5 min</option>
+          </select>
+        </div>
+      </section>
+
       <section class="controls" aria-label="Prompt composer">
         <div class="prompt-row">
           <input
