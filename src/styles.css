@@ -242,6 +242,17 @@ h1,
   padding: var(--space-sm) 0;
 }
 
+.chat-composer {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 20;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-surface) 92%, white 8%);
+  box-shadow: var(--shadow-md);
+  padding: 0.75rem;
+}
+
 .prompt-row,
 .controls-row {
   display: flex;
@@ -366,6 +377,7 @@ a:focus-visible,
   min-height: 0;
   overflow-y: auto;
   padding-right: 0.2rem;
+  padding-bottom: 10rem;
   scrollbar-gutter: stable;
 }
 

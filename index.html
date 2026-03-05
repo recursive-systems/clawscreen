@@ -47,7 +47,11 @@
         </div>
       </section>
 
-      <section class="controls" aria-label="Prompt composer">
+      <main class="scene-layout">
+        <section id="sceneCards" class="cards-grid" aria-live="polite"></section>
+      </main>
+
+      <section class="controls chat-composer" aria-label="Prompt composer">
         <div class="prompt-row">
           <input
             id="promptInput"
@@ -59,6 +63,20 @@
           <button id="retryBtn" type="button">Try again</button>
         </div>
 
+        <section class="status" aria-live="polite" aria-atomic="true">
+          <div class="status-line">
+            <span id="statusPill" class="state-label">Ready</span>
+            <span id="statusTitle" class="status-title">Screen status</span>
+          </div>
+          <p id="statusMessage" class="status-message">Describe what you want to see, then choose Create screen.</p>
+          <div class="trust-row" aria-live="polite">
+            <div id="sourceBadges" class="source-badges" aria-label="Data sources">
+              <span class="trust-placeholder">Source: waiting for live data</span>
+            </div>
+            <p id="screenUpdatedAt" class="screen-updated-at">Last updated: —</p>
+          </div>
+        </section>
+
         <div class="controls-row">
           <details class="advanced-tools">
             <summary>Debug tools (advanced)</summary>
@@ -66,24 +84,6 @@
           </details>
         </div>
       </section>
-
-      <section class="status" aria-live="polite" aria-atomic="true">
-        <div class="status-line">
-          <span id="statusPill" class="state-label">Ready</span>
-          <span id="statusTitle" class="status-title">Screen status</span>
-        </div>
-        <p id="statusMessage" class="status-message">Describe what you want to see, then choose Create screen.</p>
-        <div class="trust-row" aria-live="polite">
-          <div id="sourceBadges" class="source-badges" aria-label="Data sources">
-            <span class="trust-placeholder">Source: waiting for live data</span>
-          </div>
-          <p id="screenUpdatedAt" class="screen-updated-at">Last updated: —</p>
-        </div>
-      </section>
-
-      <main class="scene-layout">
-        <section id="sceneCards" class="cards-grid" aria-live="polite"></section>
-      </main>
     </div>
 
     <dialog id="rawSceneDialog" class="raw-dialog">
