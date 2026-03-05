@@ -26,7 +26,7 @@ export function getOpenClawGatewayConfigFromEnv(env: NodeJS.ProcessEnv = process
     agentId,
     sessionKey: env.OPENCLAW_GATEWAY_SESSION_KEY || `agent:${agentId}:clawscreen-a2ui`,
     rpcTimeoutMs: Number(env.OPENCLAW_GATEWAY_RPC_TIMEOUT_MS || 30000),
-    responseTimeoutMs: Number(env.OPENCLAW_GATEWAY_RESPONSE_TIMEOUT_MS || 45000)
+    responseTimeoutMs: Number(env.OPENCLAW_GATEWAY_RESPONSE_TIMEOUT_MS || 120000)
   };
 }
 

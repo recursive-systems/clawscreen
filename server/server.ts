@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { canonicalToCompatiblePayload, toCanonicalEnvelope } from '../shared/a2ui.js';
+import { canonicalToCompatiblePayload, getA2UICapabilities, toCanonicalEnvelope, validateRemoteA2UIIntent } from '../shared/a2ui.js';
 import { createActionResponseEnvelope, validateActionRequestEnvelope } from '../shared/actionEnvelope.js';
 import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
 import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
@@ -29,6 +29,10 @@ app.get('/healthz', (_req: Request, res: Response) => {
   res.json({ ok: true, service: 'clawscreen-a2ui-bridge', provider: 'openclaw-gateway', gatewaySessionKey: GATEWAY_SESSION_KEY });
 });
 
+app.get('/a2ui/capabilities', (_req: Request, res: Response) => {
+  res.json({ ok: true, capabilities: getA2UICapabilities() });
+});
+
 app.post('/a2ui/generate', async (req: Request, res: Response) => {
   const prompt = String(req.body?.prompt || '').trim();
   const context = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {};
@@ -45,9 +49,19 @@ app.post('/a2ui/generate', async (req: Request, res: Response) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown generation error';
       const isGatewayConfigIssue = /OPENCLAW_GATEWAY_|gateway call failed|openclaw\s+gateway\s+call/i.test(message);
+      const isValidationFailed = /Unsupported message type|ValidationFailed|failed validation/i.test(message);
       return res.status(isGatewayConfigIssue ? 503 : 500).json({
         ok: false,
-        error: { code: isGatewayConfigIssue ? 'gateway_unavailable' : 'generation_failed', message }
+        error: {
+          code: isGatewayConfigIssue ? 'gateway_unavailable' : isValidationFailed ? 'ValidationFailed' : 'generation_failed',
+          message,
+          hints: isValidationFailed
+            ? [
+                'Use beginRendering/surfaceUpdate/dataModelUpdate messages.',
+                'For A2UI v0.9 aliases use createSurface/updateComponents/updateDataModel/sendDataModel.'
+              ]
+            : undefined
+        }
       });
     }
   }
@@ -297,6 +311,12 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, on
 
       const parsed = candidate ? tryParseJson(candidate) || tryParseEmbeddedJson(candidate) : null;
       if (parsed) {
+        const remoteValidation = validateRemoteA2UIIntent(parsed);
+        if (!remoteValidation.ok) {
+          feedback = `${remoteValidation.error.message} (${remoteValidation.error.hints.join(' ')})`;
+          break;
+        }
+
         // Trust boundary: model output is coerced into canonical messages before any rendering shape is used.
         const envelope = toCanonicalEnvelope(parsed);
         const normalized = normalizeA2uiPayload(canonicalToCompatiblePayload(envelope), prompt);

@@ -37,7 +37,6 @@ export type A2UIScreen = {
   [key: string]: unknown;
 };
 
-// Compatibility shape for current render path and /a2ui/generate response.
 export type A2UICompatiblePayload = {
   version?: string;
   screen?: A2UIScreen;
@@ -82,12 +81,49 @@ export type A2UIRenderState = {
   model: Record<string, JsonValue>;
 };
 
+export type A2UIValidationError = {
+  code: 'ValidationFailed';
+  message: string;
+  hints: string[];
+};
+
+export type A2UICapabilities = {
+  version: string;
+  supportedVersions: string[];
+  messageTypes: {
+    canonical: string[];
+    aliases: string[];
+  };
+  components: string[];
+  modalities: string[];
+};
+
 const DEFAULT_VERSION = '0.8';
+const LATEST_VERSION = '0.9';
 
 const asObject = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 };
+
+function normalizeMessageType(type: string): string {
+  return type.trim();
+}
+
+function mapToCanonicalType(type: string): A2UICanonicalMessage['type'] | null {
+  const normalized = normalizeMessageType(type);
+  if (normalized === 'beginRendering' || normalized === 'createSurface') return 'beginRendering';
+  if (normalized === 'surfaceUpdate' || normalized === 'updateComponents') return 'surfaceUpdate';
+  if (normalized === 'dataModelUpdate' || normalized === 'updateDataModel' || normalized === 'sendDataModel') return 'dataModelUpdate';
+  return null;
+}
+
+function inferVersion(msg: Record<string, unknown>, fallbackVersion: string, originalType?: string): string {
+  const version = typeof msg.version === 'string' && msg.version ? msg.version : typeof msg.schemaVersion === 'string' && msg.schemaVersion ? msg.schemaVersion : '';
+  if (version) return version;
+  if (originalType && ['createSurface', 'updateComponents', 'updateDataModel', 'sendDataModel'].includes(originalType)) return LATEST_VERSION;
+  return fallbackVersion;
+}
 
 function findScreenCandidate(payload: unknown): A2UIScreen | undefined {
   const p = asObject(payload);
@@ -104,14 +140,18 @@ function findScreenCandidate(payload: unknown): A2UIScreen | undefined {
     if (maybeScreen) return maybeScreen as A2UIScreen;
   }
 
-  const screen = asObject(p.screen);
+  const screen = asObject(p.screen ?? p.surface ?? p.components);
   if (screen) return screen as A2UIScreen;
 
   if (Array.isArray(p.blocks) || Array.isArray(p.children) || Array.isArray(p.content) || Array.isArray(p.items)) {
     return p as A2UIScreen;
   }
 
-  return p as A2UIScreen;
+  if (typeof p.title === 'string' || typeof p.subtitle === 'string' || typeof p.name === 'string') {
+    return p as A2UIScreen;
+  }
+
+  return undefined;
 }
 
 function cloneModel(model: Record<string, JsonValue>): Record<string, JsonValue> {
@@ -121,8 +161,11 @@ function cloneModel(model: Record<string, JsonValue>): Record<string, JsonValue>
 function toCanonicalMessage(value: unknown, fallbackVersion: string): A2UICanonicalMessage | null {
   const msg = asObject(value);
   if (!msg) return null;
-  const type = typeof msg.type === 'string' ? msg.type : '';
-  const version = typeof msg.version === 'string' && msg.version ? msg.version : fallbackVersion;
+  const sourceType = typeof msg.type === 'string' ? msg.type : '';
+  const type = mapToCanonicalType(sourceType);
+  if (!type) return null;
+
+  const version = inferVersion(msg, fallbackVersion, sourceType);
 
   if (type === 'beginRendering') {
     return {
@@ -133,18 +176,14 @@ function toCanonicalMessage(value: unknown, fallbackVersion: string): A2UICanoni
   }
 
   if (type === 'surfaceUpdate') {
-    const screen = findScreenCandidate(msg.screen);
+    const screen = findScreenCandidate(msg.screen ?? msg.surface ?? msg.components ?? msg);
     if (!screen) return null;
     return { type: 'surfaceUpdate', version, screen };
   }
 
-  if (type === 'dataModelUpdate') {
-    const model = asObject(msg.model);
-    if (!model) return null;
-    return { type: 'dataModelUpdate', version, model: model as Record<string, JsonValue> };
-  }
-
-  return null;
+  const model = asObject(msg.model ?? msg.dataModel ?? msg.data);
+  if (!model) return null;
+  return { type: 'dataModelUpdate', version, model: model as Record<string, JsonValue> };
 }
 
 function canonicalMessagesFromObject(rawObject: Record<string, unknown>, fallbackVersion: string): A2UICanonicalMessage[] {
@@ -156,20 +195,19 @@ function canonicalMessagesFromObject(rawObject: Record<string, unknown>, fallbac
 
   const payload = (rawObject.a2ui ?? rawObject.payload ?? rawObject) as unknown;
   const p = asObject(payload) || {};
-  const version = typeof p.version === 'string' && p.version ? p.version : fallbackVersion;
+  const version = inferVersion(p, fallbackVersion);
   const screen = findScreenCandidate(payload);
 
-  const messages: A2UICanonicalMessage[] = [
-    { type: 'beginRendering', version, issuedAt: new Date().toISOString() }
-  ];
+  const messages: A2UICanonicalMessage[] = [{ type: 'beginRendering', version, issuedAt: new Date().toISOString() }];
 
   if (screen) messages.push({ type: 'surfaceUpdate', version, screen });
 
-  if (asObject(p.model)) {
+  const model = asObject(p.model ?? p.dataModel ?? p.data);
+  if (model) {
     messages.push({
       type: 'dataModelUpdate',
       version,
-      model: p.model as Record<string, JsonValue>
+      model: model as Record<string, JsonValue>
     });
   }
 
@@ -190,7 +228,55 @@ function extractCanonicalMessages(raw: unknown, fallbackVersion: string): A2UICa
   return canonicalMessagesFromObject(obj, fallbackVersion);
 }
 
-// Trust-boundary adapter: coerce mixed external payload shapes into one internal envelope.
+export function validateRemoteA2UIIntent(raw: unknown): { ok: true } | { ok: false; error: A2UIValidationError } {
+  const obj = asObject(raw);
+  if (!obj) {
+    return {
+      ok: false,
+      error: {
+        code: 'ValidationFailed',
+        message: 'Remote payload must be a JSON object.',
+        hints: ['Send an object with either messages[] or a2ui/screen payload.']
+      }
+    };
+  }
+
+  const messages = Array.isArray(obj.messages) ? obj.messages : [obj];
+  for (const entry of messages) {
+    const msg = asObject(entry);
+    if (!msg) continue;
+    const type = typeof msg.type === 'string' ? msg.type : '';
+    if (type && !mapToCanonicalType(type)) {
+      return {
+        ok: false,
+        error: {
+          code: 'ValidationFailed',
+          message: `Unsupported message type: ${type}`,
+          hints: [
+            'Use canonical types beginRendering/surfaceUpdate/dataModelUpdate.',
+            'Or use supported aliases createSurface/updateComponents/updateDataModel/sendDataModel.'
+          ]
+        }
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+export function getA2UICapabilities(): A2UICapabilities {
+  return {
+    version: LATEST_VERSION,
+    supportedVersions: [DEFAULT_VERSION, LATEST_VERSION],
+    messageTypes: {
+      canonical: ['beginRendering', 'surfaceUpdate', 'dataModelUpdate'],
+      aliases: ['createSurface', 'updateComponents', 'updateDataModel', 'sendDataModel']
+    },
+    components: ['text', 'list', 'metric', 'card', 'notes', 'divider', 'image', 'icon', 'row', 'column', 'section'],
+    modalities: ['text', 'form', 'file', 'media']
+  };
+}
+
 export function toCanonicalEnvelope(raw: unknown): A2UICanonicalEnvelope {
   const messages = extractCanonicalMessages(raw, DEFAULT_VERSION);
   const version = messages.find((m) => typeof m.version === 'string' && m.version)?.version || DEFAULT_VERSION;
@@ -245,7 +331,6 @@ export function applyCanonicalMessages(
   return messages.reduce((acc, message) => applyCanonicalMessage(acc, message), initialState);
 }
 
-// Compatibility adapter: preserve legacy "{ version, screen }" contract for existing callers.
 export function canonicalToCompatiblePayload(envelope: A2UICanonicalEnvelope): A2UICompatiblePayload {
   const finalState = applyCanonicalMessages(envelope.messages, createInitialRenderState(envelope.version || DEFAULT_VERSION));
   const fallbackScreen: A2UIScreen = { title: 'A2UI Output', blocks: [] };

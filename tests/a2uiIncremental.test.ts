@@ -4,7 +4,9 @@ import {
   applyCanonicalMessages,
   canonicalToCompatiblePayload,
   createInitialRenderState,
-  toCanonicalEnvelope
+  getA2UICapabilities,
+  toCanonicalEnvelope,
+  validateRemoteA2UIIntent
 } from '../shared/a2ui';
 import { applyEnvelopeBatch } from '../src/protocol/applyMessages';
 
@@ -65,4 +67,35 @@ test('single-shot payloads route through reducer compatibility path', () => {
   assert.equal(applied.envelope.messages[0].type, 'beginRendering');
   assert.equal(applied.envelope.messages[1].type, 'surfaceUpdate');
   assert.equal(applied.payload.screen?.title, 'One Shot');
+});
+
+test('toCanonicalEnvelope supports A2UI v0.9 alias message types', () => {
+  const envelope = toCanonicalEnvelope([
+    { type: 'createSurface', version: '0.9' },
+    { type: 'updateDataModel', dataModel: { count: 1 } },
+    { type: 'updateComponents', surface: { title: 'Alias Path', blocks: [{ type: 'text', text: 'ok' }] } },
+    { type: 'sendDataModel', data: { mode: 'live' } }
+  ]);
+
+  assert.deepEqual(envelope.messages.map((m) => m.type), ['beginRendering', 'dataModelUpdate', 'surfaceUpdate', 'dataModelUpdate']);
+  const state = applyCanonicalMessages(envelope.messages, createInitialRenderState(envelope.version));
+  assert.equal(state.version, '0.9');
+  assert.equal(state.screen?.title, 'Alias Path');
+  assert.deepEqual(state.model, { count: 1, mode: 'live' });
+});
+
+test('validateRemoteA2UIIntent returns deterministic ValidationFailed payload details', () => {
+  const result = validateRemoteA2UIIntent({ type: 'explodeSurface', payload: {} });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, 'ValidationFailed');
+  assert.match(result.error.message, /Unsupported message type/);
+  assert.ok(result.error.hints.length >= 1);
+});
+
+test('capabilities advertise canonical + alias support for dual stack clients', () => {
+  const caps = getA2UICapabilities();
+  assert.deepEqual(caps.supportedVersions, ['0.8', '0.9']);
+  assert.ok(caps.messageTypes.aliases.includes('updateComponents'));
+  assert.ok(caps.modalities.includes('file'));
 });

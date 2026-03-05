@@ -2,6 +2,14 @@ version: 1
 product: ClawScreen
 north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
+recent_updates:
+  - date: 2026-03-05
+    change: Completed INT-006 dual-stack transport compatibility and capability advertisement
+    rationale: Added v0.8/v0.9 message alias normalization, deterministic ValidationFailed guidance, and explicit capability metadata for safer client/server interoperability.
+  - date: 2026-03-05
+    change: Elevated INT-006 from P1/todo to P0/ready
+    rationale: A2UI v0.9 introduces breaking lifecycle and schema shifts (createSurface/updateComponents/updateDataModel/sendDataModel, unified catalog, stricter validation); interoperability and trust UX now depend on proactive transport compatibility.
+
 lanes:
   - id: reliability
     outcome: Stable, low-latency generation/render pipeline
@@ -111,14 +119,17 @@ backlog:
   - id: INT-006
     lane: interaction
     title: AG-UI/A2UI transport adapter + capability advertisement
-    priority: P1
-    status: todo
-    last_updated: 2026-03-04
+    priority: P0
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-05
     acceptance:
       - Add adapter layer for AG-UI event mapping to current action/task lifecycle envelopes
       - Support client capability advertisement (supported components/modalities/version)
       - Reject unsupported remote UI intents safely with actionable fallback payload
       - Compatibility tests covering local POST flow and streaming updates
+      - Add dual-stack A2UI compatibility for v0.8 (beginRendering/surfaceUpdate/dataModelUpdate) and v0.9 (createSurface/updateComponents/updateDataModel/sendDataModel)
+      - Return deterministic ValidationFailed-style error payloads with actionable recovery hints when remote payloads violate catalog or lifecycle constraints
   - id: UI-002
     lane: ui_polish
     title: Non-technical first-run UX simplification
