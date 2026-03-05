@@ -52,7 +52,9 @@ const els = {
   rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement,
   statusPill: document.getElementById('statusPill') as HTMLElement,
   statusTitle: document.getElementById('statusTitle') as HTMLElement,
-  statusMessage: document.getElementById('statusMessage') as HTMLElement
+  statusMessage: document.getElementById('statusMessage') as HTMLElement,
+  sourceBadges: document.getElementById('sourceBadges') as HTMLElement,
+  screenUpdatedAt: document.getElementById('screenUpdatedAt') as HTMLElement
 };
 
 const state: {
@@ -78,6 +80,8 @@ const offlineFallbackPayload: A2UICompatiblePayload = {
   screen: {
     title: 'Offline Dev Fallback',
     subtitle: 'Gateway unavailable — local payload rendered',
+    updatedAt: new Date().toISOString(),
+    source: 'local_fallback',
     blocks: [
       {
         type: 'card',
@@ -138,12 +142,87 @@ function heuristicPayloadFromPrompt(prompt: string): A2UICompatiblePayload {
     screen: {
       title: 'Dynamic Prompt View',
       subtitle: 'Local heuristic render (while Gateway generation endpoint is unavailable)',
+      updatedAt: nowIso(),
+      source: 'local_heuristic',
       blocks
     }
   };
 }
 
 const nowIso = () => new Date().toISOString();
+
+function formatLastUpdated(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Last updated: just now';
+  return `Last updated: ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSourceLabel(value: string): string {
+  return value
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function collectSourceLabels(payload: A2UICompatiblePayload): string[] {
+  const labels = new Set<string>();
+
+  const push = (candidate: unknown) => {
+    if (typeof candidate === 'string' && candidate.trim()) labels.add(normalizeSourceLabel(candidate));
+  };
+
+  const scanNode = (node: unknown) => {
+    if (!isRecord(node)) return;
+
+    push(node.source);
+    push(node.provider);
+    push(node.tool);
+
+    const sourceArray = node.sources;
+    if (Array.isArray(sourceArray)) sourceArray.forEach(push);
+
+    const provenance = node.provenance;
+    if (Array.isArray(provenance)) {
+      provenance.forEach((entry) => {
+        if (!isRecord(entry)) return;
+        push(entry.source);
+        push(entry.provider);
+        push(entry.tool);
+      });
+    }
+
+    ['blocks', 'children', 'content', 'items'].forEach((key) => {
+      const nested = node[key];
+      if (Array.isArray(nested)) nested.forEach(scanNode);
+    });
+  };
+
+  scanNode(payload.screen);
+  return Array.from(labels).slice(0, 4);
+}
+
+function refreshTrustMeta(payload: A2UICompatiblePayload) {
+  const sources = collectSourceLabels(payload);
+  if (!sources.length) {
+    els.sourceBadges.innerHTML = '<span class="trust-placeholder">Source: generated locally</span>';
+  } else {
+    els.sourceBadges.innerHTML = sources.map((source) => `<span class="source-badge">${source}</span>`).join('');
+  }
+
+  const screen = isRecord(payload.screen) ? payload.screen : {};
+  const timestampCandidate =
+    (typeof screen.updatedAt === 'string' && screen.updatedAt) ||
+    (typeof screen.lastUpdated === 'string' && screen.lastUpdated) ||
+    (typeof screen.generatedAt === 'string' && screen.generatedAt) ||
+    nowIso();
+
+  els.screenUpdatedAt.textContent = formatLastUpdated(timestampCandidate);
+}
 
 function formatClock() {
   const now = new Date();
@@ -550,6 +629,7 @@ function renderA2ui(payload: unknown, source: string) {
   state.renderState = normalized.renderState;
   state.lastPayload = normalized.payload;
   persistLkg(normalized.payload);
+  refreshTrustMeta(normalized.payload);
 
   const shouldPersistProfilePayload = source !== 'profile-switch-empty' && source !== 'startup-offline-fallback';
   if (shouldPersistProfilePayload) {

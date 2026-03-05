@@ -821,6 +821,47 @@ pre {
   min-height: 1.5em;
 }
 
+.trust-row {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 0.55rem;
+}
+
+.source-badges {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.source-badge,
+.trust-placeholder {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-surface-dim);
+  color: var(--text-secondary);
+  padding: 0.24rem 0.6rem;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.source-badge {
+  background: rgba(74, 140, 106, 0.09);
+  border-color: rgba(74, 140, 106, 0.35);
+  color: var(--ok);
+}
+
+.screen-updated-at {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
 .app[data-state='thinking'] .status,
 .app[data-state='rendering'] .status {
   border-color: rgba(184, 134, 46, 0.4);

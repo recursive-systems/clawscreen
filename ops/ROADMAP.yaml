@@ -4,6 +4,9 @@ north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
   - date: 2026-03-05
+    change: Completed TRUST-001 source and freshness badges in primary status rail
+    rationale: Added per-screen source badges derived from payload provenance and explicit last-updated timestamp so users can quickly judge trust/freshness without opening debug JSON.
+  - date: 2026-03-05
     change: Completed INT-006 dual-stack transport compatibility and capability advertisement
     rationale: Added v0.8/v0.9 message alias normalization, deterministic ValidationFailed guidance, and explicit capability metadata for safer client/server interoperability.
   - date: 2026-03-05
@@ -78,8 +81,9 @@ backlog:
     lane: trust_ux
     title: Source and freshness badges
     priority: P1
-    status: todo
-    last_updated: 2026-02-28
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-05
     acceptance:
       - Show data source per major block group when available
       - Last-updated timestamp at screen level
