@@ -60,3 +60,16 @@ test('renderNode rejects javascript URLs for image sources', () => {
   assert.doesNotMatch(html, /<img /);
   assert.doesNotMatch(html, /javascript:/i);
 });
+
+test('renderNode humanizes technical source errors for non-technical UX', () => {
+  const primitive = renderNode('Missing source: nodes.location_get (error: node required).');
+  const list = renderNode({
+    type: 'list',
+    items: ['Missing source: nodes.status (no paired nodes available).']
+  });
+
+  assert.match(primitive, /Some live information is unavailable right now\./);
+  assert.match(list, /Some live information is unavailable right now\./);
+  assert.doesNotMatch(primitive, /nodes\.location_get/);
+  assert.doesNotMatch(list, /no paired nodes available/);
+});

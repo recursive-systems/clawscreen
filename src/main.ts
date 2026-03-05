@@ -218,6 +218,15 @@ function createProfile(name: string, lastPrompt = state.lastPrompt, payload: A2U
   };
 }
 
+function nextProfileName(base = 'Saved screen'): string {
+  const existing = new Set(state.profiles.map((profile) => profile.name.trim().toLowerCase()));
+  for (let index = 1; index <= 999; index += 1) {
+    const candidate = `${base} ${index}`;
+    if (!existing.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${base} ${Date.now()}`;
+}
+
 function persistProfiles() {
   localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify({ profiles: state.profiles, activeProfileId: state.activeProfileId }));
 }
@@ -630,39 +639,44 @@ function wire() {
 
   els.retryBtn.addEventListener('click', () => submitPrompt(getActiveProfile().lastPrompt || state.lastPrompt, 'retry'));
   els.saveProfileBtn.addEventListener('click', () => {
-    const suggested = `Screen ${state.profiles.length + 1}`;
-    const name = window.prompt('Name this new tab', suggested)?.trim();
-    if (!name) return;
+    const name = nextProfileName();
     const next = createProfile(name, state.lastPrompt, state.lastPayload);
     state.profiles.push(next);
     state.activeProfileId = next.id;
     renderProfileTabs();
     refreshAutoRefreshTimer();
     persistProfiles();
-    setUiState('ready', `${name} saved. You can switch tabs any time.`);
+    setUiState('ready', `${name} saved. You can rename it anytime.`);
   });
 
   els.renameProfileBtn.addEventListener('click', () => {
     const active = getActiveProfile();
     const renamed = window.prompt('Rename this tab', active.name)?.trim();
-    if (!renamed) return;
+    if (!renamed) {
+      setUiState('ready', 'Rename canceled.');
+      return;
+    }
     updateActiveProfile((profile) => ({ ...profile, name: renamed, updatedAt: nowIso() }));
     renderProfileTabs();
-    setUiState('ready', `Renamed tab to ${renamed}.`);
+    setUiState('ready', `Tab renamed to “${renamed}”.`);
   });
 
   els.deleteProfileBtn.addEventListener('click', () => {
     if (state.profiles.length <= 1) {
-      setUiState('error', 'Keep at least one tab so your screens have a home.');
+      setUiState('error', 'You need at least one tab to keep your screen saved.');
       return;
     }
     const active = getActiveProfile();
     const confirmed = window.confirm(`Delete “${active.name}”? This cannot be undone.`);
-    if (!confirmed) return;
+    if (!confirmed) {
+      setUiState('ready', 'Delete canceled.');
+      return;
+    }
     state.profiles = state.profiles.filter((profile) => profile.id !== active.id);
     state.activeProfileId = state.profiles[0].id;
     renderProfileTabs();
     switchProfile(state.activeProfileId);
+    setUiState('ready', 'Tab deleted.');
   });
 
   els.refreshProfileBtn.addEventListener('click', () => {

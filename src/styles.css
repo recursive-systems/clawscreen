@@ -189,6 +189,10 @@ h1,
   align-items: center;
 }
 
+.profile-refresh-row {
+  padding-top: 0.2rem;
+}
+
 .profile-tabs {
   display: flex;
   gap: 0.4rem;
@@ -813,6 +817,8 @@ pre {
 .status-message {
   color: var(--text-primary);
   font-size: var(--text-sm);
+  line-height: 1.5;
+  min-height: 1.5em;
 }
 
 .app[data-state='thinking'] .status,

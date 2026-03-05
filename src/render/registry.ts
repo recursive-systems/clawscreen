@@ -43,7 +43,7 @@ function humanizeMessageText(text: string): string {
   const t = String(text || '').trim();
   if (!t) return t;
 
-  if (/source missing:/i.test(t) || /fetch failed/i.test(t)) {
+  if (/source missing:|missing source:|node required|no paired nodes available|fetch failed/i.test(t)) {
     return 'Some live information is unavailable right now.';
   }
 
@@ -168,7 +168,7 @@ function renderUnsupported(node: A2UIBlock): string {
 
 export function renderNode(node: unknown): string {
   if (node == null) return '';
-  if (['string', 'number', 'boolean'].includes(typeof node)) return `<p>${escapeHtml(node)}</p>`;
+  if (['string', 'number', 'boolean'].includes(typeof node)) return `<p>${renderPrimitive(node)}</p>`;
 
   const block = node as A2UIBlock;
   const rawType = String(block.type || block.kind || block.component || 'unknown').toLowerCase();
