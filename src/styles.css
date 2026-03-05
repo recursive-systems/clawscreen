@@ -661,8 +661,12 @@ a:focus-visible,
 
 .app[data-state='thinking'] .state-label::before,
 .app[data-state='rendering'] .state-label::before {
-  background: var(--warn);
-  animation: pulseDot 1.2s ease-in-out infinite;
+  width: 0.6rem;
+  height: 0.6rem;
+  background: transparent;
+  border: 2px solid rgba(184, 134, 46, 0.4);
+  border-top-color: var(--warn);
+  animation: generate-spin 0.8s linear infinite;
 }
 
 .app[data-state='ready'] .state-label {
@@ -824,6 +828,20 @@ pre {
   letter-spacing: 0.08em;
   color: var(--text-secondary);
   font-weight: 700;
+}
+
+.status-info {
+  display: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  cursor: help;
+  user-select: none;
 }
 
 .status-message {

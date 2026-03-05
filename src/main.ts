@@ -54,6 +54,7 @@ const els = {
   rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement,
   statusPill: document.getElementById('statusPill') as HTMLElement,
   statusTitle: document.getElementById('statusTitle') as HTMLElement,
+  statusInfo: document.getElementById('statusInfo') as HTMLElement,
   statusMessage: document.getElementById('statusMessage') as HTMLElement,
   sourceBadges: document.getElementById('sourceBadges') as HTMLElement,
   screenUpdatedAt: document.getElementById('screenUpdatedAt') as HTMLElement
@@ -245,16 +246,16 @@ function setUiState(nextState: string, message?: string) {
 
   const pillByState: Record<string, string> = {
     idle: 'Ready',
-    thinking: 'Thinking',
-    rendering: 'Updating',
+    thinking: 'Working',
+    rendering: 'Working',
     ready: 'Ready',
     error: 'Needs attention'
   };
 
   const titleByState: Record<string, string> = {
     idle: 'Screen status',
-    thinking: 'Preparing your screen',
-    rendering: 'Applying updates',
+    thinking: 'Working',
+    rendering: 'Working',
     ready: 'Screen is up to date',
     error: 'Could not fully refresh'
   };
@@ -262,8 +263,16 @@ function setUiState(nextState: string, message?: string) {
   els.statusPill.textContent = pillByState[nextState] || 'Status';
   els.statusTitle.textContent = titleByState[nextState] || 'Screen status';
 
+  if (isBusy) {
+    els.statusMessage.textContent = 'Working…';
+    els.statusInfo.style.display = 'inline-flex';
+    els.statusInfo.setAttribute('title', message || 'Working on your request. Complex screens may take up to about a minute.');
+  } else {
+    els.statusInfo.style.display = 'none';
+    if (message) els.statusMessage.textContent = message;
+  }
+
   if (message) {
-    els.statusMessage.textContent = message;
     els.app.setAttribute('aria-label', message);
   }
 }
