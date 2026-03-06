@@ -266,7 +266,25 @@ h1,
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-surface) 92%, white 8%);
   box-shadow: var(--shadow-md);
-  padding: 0.75rem;
+  padding: 0.65rem;
+}
+
+.chat-composer .status,
+.chat-composer .controls-row,
+.chat-composer #retryBtn {
+  display: none;
+}
+
+.chat-composer .prompt-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.chat-composer .prompt-row button {
+  white-space: nowrap;
+  padding-inline: 1rem;
 }
 
 .prompt-row,
