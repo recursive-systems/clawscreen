@@ -21,31 +21,11 @@
         </div>
       </header>
 
-      <section class="profile-bar" aria-label="Saved screens">
-        <div class="profile-bar-head">
-          <p class="label">Saved screens</p>
-          <div class="profile-actions">
-            <button id="saveProfileBtn" type="button">Save copy as new tab</button>
-            <button id="renameProfileBtn" type="button">Rename tab</button>
-            <button id="deleteProfileBtn" type="button">Delete tab</button>
-          </div>
-        </div>
+      <nav class="profile-nav" aria-label="Saved screens navigation">
+        <p class="label">Saved screens</p>
         <div id="profileTabs" class="profile-tabs" role="tablist" aria-label="Screen tabs"></div>
-        <div class="profile-refresh-row">
-          <button id="refreshProfileBtn" type="button">Update this screen</button>
-          <label class="auto-refresh-toggle" for="autoRefreshEnabled">
-            <input id="autoRefreshEnabled" type="checkbox" />
-            Auto refresh
-          </label>
-          <label for="autoRefreshInterval" class="auto-refresh-label">Every</label>
-          <select id="autoRefreshInterval" aria-label="Auto refresh interval">
-            <option value="30">30 sec</option>
-            <option value="60" selected>60 sec</option>
-            <option value="120">2 min</option>
-            <option value="300">5 min</option>
-          </select>
-        </div>
-      </section>
+        <button id="openProfileManagerBtn" type="button" class="profile-manage-btn">Manage</button>
+      </nav>
 
       <main class="scene-layout">
         <section id="sceneCards" class="cards-grid" aria-live="polite"></section>
@@ -86,6 +66,33 @@
         </div>
       </section>
     </div>
+
+    <dialog id="profileManagerDialog" class="profile-dialog" aria-label="Manage saved screens">
+      <div class="dialog-head">
+        <h3>Manage saved screens</h3>
+        <button id="profileManagerCloseBtn" type="button">Close</button>
+      </div>
+      <div class="profile-actions">
+        <button id="saveProfileBtn" type="button">Save copy as new tab</button>
+        <button id="renameProfileBtn" type="button">Rename tab</button>
+        <button id="deleteProfileBtn" type="button">Delete tab</button>
+        <button id="refreshProfileBtn" type="button">Update this screen</button>
+      </div>
+      <div class="profile-refresh-row">
+        <label class="auto-refresh-toggle" for="autoRefreshEnabled">
+          <input id="autoRefreshEnabled" type="checkbox" />
+          Auto refresh
+        </label>
+        <label for="autoRefreshInterval" class="auto-refresh-label">Every</label>
+        <select id="autoRefreshInterval" aria-label="Auto refresh interval">
+          <option value="30">30 sec</option>
+          <option value="60" selected>60 sec</option>
+          <option value="120">2 min</option>
+          <option value="300">5 min</option>
+        </select>
+      </div>
+      <div id="profileManagerTabs" class="profile-manager-tabs" role="tablist" aria-label="All saved screens"></div>
+    </dialog>
 
     <dialog id="rawSceneDialog" class="raw-dialog">
       <div class="dialog-head">

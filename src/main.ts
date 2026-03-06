@@ -41,6 +41,10 @@ const els = {
   submitBtn: document.getElementById('generateBtn') as HTMLButtonElement,
   retryBtn: document.getElementById('retryBtn') as HTMLButtonElement,
   profileTabs: document.getElementById('profileTabs') as HTMLElement,
+  profileManagerTabs: document.getElementById('profileManagerTabs') as HTMLElement,
+  openProfileManagerBtn: document.getElementById('openProfileManagerBtn') as HTMLButtonElement,
+  profileManagerDialog: document.getElementById('profileManagerDialog') as HTMLDialogElement,
+  profileManagerCloseBtn: document.getElementById('profileManagerCloseBtn') as HTMLButtonElement,
   saveProfileBtn: document.getElementById('saveProfileBtn') as HTMLButtonElement,
   renameProfileBtn: document.getElementById('renameProfileBtn') as HTMLButtonElement,
   deleteProfileBtn: document.getElementById('deleteProfileBtn') as HTMLButtonElement,
@@ -389,26 +393,31 @@ function updateActiveProfile(updater: (profile: ScreenProfile) => ScreenProfile)
 }
 
 function renderProfileTabs() {
-  els.profileTabs.innerHTML = '';
-  state.profiles.forEach((profile) => {
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'profile-tab';
-    tab.setAttribute('role', 'tab');
-    tab.id = `tab-${profile.id}`;
-    tab.setAttribute('aria-selected', String(profile.id === state.activeProfileId));
-    tab.setAttribute('aria-controls', 'sceneCards');
-    tab.tabIndex = profile.id === state.activeProfileId ? 0 : -1;
-    tab.disabled = state.isSubmitting;
-    tab.textContent = profile.name;
-    if (profile.id === state.activeProfileId) tab.classList.add('is-active');
-    tab.addEventListener('click', () => switchProfile(profile.id));
-    els.profileTabs.appendChild(tab);
-  });
+  const renderInto = (container: HTMLElement, baseClass: string) => {
+    container.innerHTML = '';
+    state.profiles.forEach((profile) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = baseClass;
+      tab.setAttribute('role', 'tab');
+      tab.id = `${baseClass}-${profile.id}`;
+      tab.setAttribute('aria-selected', String(profile.id === state.activeProfileId));
+      tab.setAttribute('aria-controls', 'sceneCards');
+      tab.tabIndex = profile.id === state.activeProfileId ? 0 : -1;
+      tab.disabled = state.isSubmitting;
+      tab.textContent = profile.name;
+      if (profile.id === state.activeProfileId) tab.classList.add('is-active');
+      tab.addEventListener('click', () => switchProfile(profile.id));
+      container.appendChild(tab);
+    });
+  };
+
+  renderInto(els.profileTabs, 'profile-tab');
+  renderInto(els.profileManagerTabs, 'profile-manager-tab');
 }
 
 function focusProfileTab(profileId: string) {
-  const target = document.getElementById(`tab-${profileId}`) as HTMLButtonElement | null;
+  const target = document.getElementById(`profile-tab-${profileId}`) as HTMLButtonElement | null;
   if (target) target.focus();
 }
 
@@ -479,6 +488,10 @@ function switchProfile(profileId: string) {
   renderProfileTabs();
   refreshAutoRefreshTimer();
   persistProfiles();
+
+  if (els.profileManagerDialog.open) {
+    els.profileManagerDialog.close();
+  }
 }
 
 function isSafePayload(payload: unknown): boolean {
@@ -738,6 +751,7 @@ function showRawPayload() {
 function setBusyControls(isBusy: boolean) {
   els.submitBtn.disabled = isBusy;
   els.retryBtn.disabled = isBusy;
+  els.openProfileManagerBtn.disabled = isBusy;
   els.saveProfileBtn.disabled = isBusy;
   els.renameProfileBtn.disabled = isBusy;
   els.deleteProfileBtn.disabled = isBusy;
@@ -818,6 +832,17 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
 function wire() {
   els.profileTabs.addEventListener('keydown', handleProfileTabsKeydown);
+  els.profileManagerTabs.addEventListener('keydown', handleProfileTabsKeydown);
+
+  els.openProfileManagerBtn.addEventListener('click', () => {
+    if (state.isSubmitting) return;
+    els.profileManagerDialog.showModal();
+  });
+
+  els.profileManagerCloseBtn.addEventListener('click', () => {
+    els.profileManagerDialog.close();
+  });
+
   els.submitBtn.addEventListener('click', () => submitPrompt(els.promptInput.value, 'prompt'));
   els.promptInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
