@@ -449,8 +449,15 @@ a:focus-visible,
   padding: var(--space-md);
   position: relative;
   overflow: hidden;
+  min-height: 7.5rem;
   animation: fadeIn 400ms ease both;
   box-shadow: var(--shadow-sm);
+}
+
+.scene-card:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim), var(--shadow-sm);
 }
 
 .scene-card::before {
@@ -514,6 +521,17 @@ a:focus-visible,
 
 .node-child {
   margin-bottom: var(--space-md);
+}
+
+.scene-card > * + * {
+  margin-top: var(--space-sm);
+}
+
+.scene-card p,
+.scene-card li,
+.scene-card dd,
+.scene-card figcaption {
+  line-height: 1.55;
 }
 
 /* ================================================================

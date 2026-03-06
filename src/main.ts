@@ -678,9 +678,33 @@ function getNodeSizeClass(node: unknown): string {
   return 'size-large';
 }
 
+function getRenderedCards(): HTMLElement[] {
+  return Array.from(els.renderSurface.querySelectorAll<HTMLElement>('.scene-card'));
+}
+
+function focusCardByIndex(index: number) {
+  const cards = getRenderedCards();
+  if (!cards.length) return;
+  const bounded = Math.max(0, Math.min(index, cards.length - 1));
+  cards.forEach((card, cardIndex) => {
+    card.tabIndex = cardIndex === bounded ? 0 : -1;
+    card.dataset.cardIndex = String(cardIndex);
+  });
+  cards[bounded].focus();
+}
+
+function enableCardKeyboardNavigation() {
+  const cards = getRenderedCards();
+  cards.forEach((card, index) => {
+    card.dataset.cardIndex = String(index);
+    card.tabIndex = index === 0 ? 0 : -1;
+  });
+}
+
 function syncRenderSurface(nodesToRender: unknown[]) {
   if (!nodesToRender.length) {
-    els.renderSurface.innerHTML = '<article class="scene-card size-large empty-card"><h3>No blocks returned</h3><p class="muted">Try a more specific prompt to generate a richer layout.</p></article>';
+    els.renderSurface.innerHTML = '<article class="scene-card size-large empty-card" tabindex="0"><h3>No blocks returned</h3><p class="muted">Try a more specific prompt to generate a richer layout.</p></article>';
+    enableCardKeyboardNavigation();
     return;
   }
 
@@ -699,6 +723,7 @@ function syncRenderSurface(nodesToRender: unknown[]) {
       }
       article.innerHTML = html;
       article.tabIndex = index === 0 ? 0 : -1;
+      article.dataset.cardIndex = String(index);
       els.renderSurface.appendChild(article);
       return;
     }
@@ -710,12 +735,15 @@ function syncRenderSurface(nodesToRender: unknown[]) {
       delete current.dataset.blockType;
     }
     current.tabIndex = index === 0 ? 0 : -1;
+    current.dataset.cardIndex = String(index);
     if (current.innerHTML !== html) current.innerHTML = html;
   });
 
   for (let i = existing.length - 1; i >= nodesToRender.length; i -= 1) {
     existing[i].remove();
   }
+
+  enableCardKeyboardNavigation();
 }
 
 function renderA2ui(payload: unknown, source: string) {
@@ -797,7 +825,12 @@ async function submitPrompt(prompt: string, source = 'prompt') {
   try {
     renderLoadingSkeleton();
     const payload = await generateA2ui(normalizedPrompt, {
-      onStatus: (_statusText) => {
+      onStatus: (statusText) => {
+        const cleanStatus = String(statusText || '').trim();
+        if (cleanStatus) {
+          setUiState('thinking', `Live update: ${cleanStatus}`);
+          return;
+        }
         setUiState('thinking', 'Still working… complex requests can take about a minute.');
       },
       onPartial: (partialPayload) => {
@@ -845,6 +878,42 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 function wire() {
   els.profileTabs.addEventListener('keydown', handleProfileTabsKeydown);
   els.profileManagerTabs.addEventListener('keydown', handleProfileTabsKeydown);
+
+  els.renderSurface.addEventListener('click', (event) => {
+    const card = (event.target as HTMLElement | null)?.closest('.scene-card') as HTMLElement | null;
+    if (!card) return;
+    const index = Number(card.dataset.cardIndex);
+    if (!Number.isFinite(index)) return;
+    focusCardByIndex(index);
+  });
+
+  els.renderSurface.addEventListener('keydown', (event) => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || !active.classList.contains('scene-card')) return;
+    const index = Number(active.dataset.cardIndex);
+    if (!Number.isFinite(index)) return;
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusCardByIndex(index + 1);
+    }
+
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusCardByIndex(index - 1);
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault();
+      focusCardByIndex(0);
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault();
+      const cards = getRenderedCards();
+      focusCardByIndex(cards.length - 1);
+    }
+  });
 
   els.openProfileManagerBtn.addEventListener('click', () => {
     if (state.isSubmitting) return;
