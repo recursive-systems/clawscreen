@@ -1013,18 +1013,56 @@ pre {
     grid-column: span 12;
   }
 
+  .top-bar {
+    gap: 0.35rem;
+    padding-bottom: 0.4rem;
+  }
+
+  .top-bar > div:first-child {
+    display: none;
+  }
+
+  .scene-meta h2 {
+    font-size: var(--text-2xl);
+  }
+
+  .profile-bar {
+    padding: 0.55rem;
+    gap: 0.45rem;
+  }
+
+  .profile-actions button:not(#saveProfileBtn),
+  #retryBtn,
+  .status,
+  .controls-row {
+    display: none;
+  }
+
   input {
     min-width: 0;
     width: 100%;
   }
 
   .prompt-row {
-    flex-direction: column;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .prompt-row button {
-    width: 100%;
+    width: auto;
+    white-space: nowrap;
+    padding-inline: 1rem;
+  }
+
+  .chat-composer {
+    padding: 0.6rem;
+    bottom: 0.5rem;
+  }
+
+  .scene-layout {
+    padding-bottom: 5.2rem;
   }
 
   .app {
