@@ -3,6 +3,9 @@ product: ClawScreen
 north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
+  - date: 2026-03-06
+    change: Completed UI-001 frontend polish pass for dynamic A2UI surfaces
+    rationale: Fixed tab keyboard switching IDs, improved status/streaming readability, tightened long-content overflow behavior, and strengthened responsive/focus affordances without changing generation functionality.
   - date: 2026-03-05
     change: Completed TRUST-001 source and freshness badges in primary status rail
     rationale: Added per-screen source badges derived from payload provenance and explicit last-updated timestamp so users can quickly judge trust/freshness without opening debug JSON.
@@ -101,8 +104,9 @@ backlog:
     lane: ui_polish
     title: Frontend polish pass for dynamic A2UI surfaces
     priority: P0
-    status: ready
-    last_updated: 2026-03-03
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-06
     acceptance:
       - Improve visual hierarchy/readability across mixed block types (section/row/column/image/metric/list)
       - Ensure long content gracefully wraps/scrolls without clipping or layout collapse

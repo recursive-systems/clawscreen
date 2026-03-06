@@ -269,7 +269,7 @@ function setUiState(nextState: string, message?: string) {
   els.statusTitle.textContent = titleByState[nextState] || 'Screen status';
 
   if (isBusy) {
-    els.statusMessage.textContent = 'Working…';
+    els.statusMessage.textContent = message || 'Working…';
     els.statusInfo.style.display = 'inline-flex';
     els.statusInfo.setAttribute('title', message || 'Working on your request. Complex screens may take up to about a minute.');
   } else {
@@ -432,8 +432,13 @@ function focusProfileTab(profileId: string) {
   if (target) target.focus();
 }
 
+function getProfileIdFromTabId(tabId: string): string {
+  return tabId.replace(/^profile-manager-tab-/, '').replace(/^profile-tab-/, '');
+}
+
 function handleProfileTabsKeydown(event: KeyboardEvent) {
-  const tabs = Array.from(els.profileTabs.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  const container = event.currentTarget as HTMLElement | null;
+  const tabs = Array.from((container || els.profileTabs).querySelectorAll<HTMLButtonElement>('[role="tab"]'));
   if (!tabs.length) return;
 
   const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
@@ -446,10 +451,11 @@ function handleProfileTabsKeydown(event: KeyboardEvent) {
     if (event.key === 'ArrowLeft') nextIndex = (selectedIndex - 1 + tabs.length) % tabs.length;
     if (event.key === 'Home') nextIndex = 0;
     if (event.key === 'End') nextIndex = tabs.length - 1;
-    const tabId = tabs[nextIndex]?.id?.replace(/^tab-/, '');
-    if (tabId) {
-      switchProfile(tabId);
-      focusProfileTab(tabId);
+    const tabId = tabs[nextIndex]?.id;
+    const profileId = tabId ? getProfileIdFromTabId(tabId) : '';
+    if (profileId) {
+      switchProfile(profileId);
+      focusProfileTab(profileId);
     }
   }
 
@@ -934,6 +940,22 @@ function wire() {
     if (event.key === 'Enter') {
       event.preventDefault();
       submitPrompt(els.promptInput.value, 'prompt');
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      submitPrompt(els.promptInput.value, 'shortcut');
+      return;
+    }
+
+    if (event.key === '/' && document.activeElement !== els.promptInput) {
+      const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
+        event.preventDefault();
+        els.promptInput.focus();
+      }
     }
   });
 

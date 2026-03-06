@@ -199,6 +199,12 @@ h1,
   font-size: var(--text-sm);
 }
 
+.profile-tab:focus-visible,
+.profile-manager-tab:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
 .profile-tab.is-active,
 .profile-manager-tab.is-active {
   background: var(--text-primary);
@@ -265,7 +271,7 @@ h1,
 
 .chat-composer {
   position: sticky;
-  bottom: 0.75rem;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
   z-index: 20;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -450,6 +456,9 @@ a:focus-visible,
   position: relative;
   overflow: hidden;
   min-height: 7.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
   animation: fadeIn 400ms ease both;
   box-shadow: var(--shadow-sm);
 }
@@ -524,7 +533,7 @@ a:focus-visible,
 }
 
 .scene-card > * + * {
-  margin-top: var(--space-sm);
+  margin-top: 0;
 }
 
 .scene-card p,
@@ -826,12 +835,20 @@ pre {
   background: var(--bg-surface-dim);
   padding: var(--space-md);
   border-radius: var(--radius);
-  max-height: 22rem;
+  max-height: min(42vh, 24rem);
   overflow: auto;
 }
 
+.scene-card ul,
+.scene-card ol,
+.scene-card .type-notes,
+.scene-card .type-summary,
+.scene-card .type-list {
+  max-width: 100%;
+}
+
 .scene-card ul {
-  max-height: 20rem;
+  max-height: min(42vh, 20rem);
   overflow: auto;
   padding-right: 0.35rem;
 }
@@ -1131,7 +1148,12 @@ pre {
 
   .chat-composer {
     padding: 0.6rem;
-    bottom: 0.5rem;
+    bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .status-line,
+  .trust-row {
+    align-items: flex-start;
   }
 
   .scene-layout {
