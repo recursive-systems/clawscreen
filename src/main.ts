@@ -41,6 +41,7 @@ const els = {
   submitBtn: document.getElementById('generateBtn') as HTMLButtonElement,
   retryBtn: document.getElementById('retryBtn') as HTMLButtonElement,
   profileTabs: document.getElementById('profileTabs') as HTMLElement,
+  profileSelect: document.getElementById('profileSelect') as HTMLSelectElement,
   profileManagerTabs: document.getElementById('profileManagerTabs') as HTMLElement,
   openProfileManagerBtn: document.getElementById('openProfileManagerBtn') as HTMLButtonElement,
   profileManagerDialog: document.getElementById('profileManagerDialog') as HTMLDialogElement,
@@ -414,6 +415,16 @@ function renderProfileTabs() {
 
   renderInto(els.profileTabs, 'profile-tab');
   renderInto(els.profileManagerTabs, 'profile-manager-tab');
+
+  els.profileSelect.innerHTML = '';
+  state.profiles.forEach((profile) => {
+    const option = document.createElement('option');
+    option.value = profile.id;
+    option.textContent = profile.name;
+    option.selected = profile.id === state.activeProfileId;
+    els.profileSelect.appendChild(option);
+  });
+  els.profileSelect.disabled = state.isSubmitting;
 }
 
 function focusProfileTab(profileId: string) {
@@ -752,6 +763,7 @@ function setBusyControls(isBusy: boolean) {
   els.submitBtn.disabled = isBusy;
   els.retryBtn.disabled = isBusy;
   els.openProfileManagerBtn.disabled = isBusy;
+  els.profileSelect.disabled = isBusy;
   els.saveProfileBtn.disabled = isBusy;
   els.renameProfileBtn.disabled = isBusy;
   els.deleteProfileBtn.disabled = isBusy;
@@ -837,6 +849,11 @@ function wire() {
   els.openProfileManagerBtn.addEventListener('click', () => {
     if (state.isSubmitting) return;
     els.profileManagerDialog.showModal();
+  });
+
+  els.profileSelect.addEventListener('change', () => {
+    const nextId = els.profileSelect.value;
+    if (nextId) switchProfile(nextId);
   });
 
   els.profileManagerCloseBtn.addEventListener('click', () => {

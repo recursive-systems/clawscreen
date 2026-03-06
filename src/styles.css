@@ -183,6 +183,11 @@ h1,
   padding: 0.05rem 0;
 }
 
+.profile-select {
+  display: none;
+  min-width: 0;
+}
+
 .profile-tab,
 .profile-manager-tab {
   border-radius: 999px;
@@ -1062,23 +1067,25 @@ pre {
 
   .profile-nav {
     grid-template-columns: 1fr auto;
-    grid-template-areas:
-      'label manage'
-      'tabs tabs';
-    row-gap: 0.35rem;
-    padding: 0.45rem;
+    grid-template-areas: 'select manage';
+    row-gap: 0.25rem;
+    padding: 0.4rem;
   }
 
-  .profile-nav .label {
-    grid-area: label;
+  .profile-nav .label,
+  .profile-tabs {
+    display: none;
+  }
+
+  .profile-select {
+    display: block;
+    grid-area: select;
+    width: 100%;
   }
 
   .profile-manage-btn {
     grid-area: manage;
-  }
-
-  .profile-tabs {
-    grid-area: tabs;
+    padding-inline: 0.7rem;
   }
 
   #retryBtn,
