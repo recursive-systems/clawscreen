@@ -61,6 +61,21 @@ test('renderNode rejects javascript URLs for image sources', () => {
   assert.doesNotMatch(html, /javascript:/i);
 });
 
+test('renderNode supports interactive foundation components for slice A', () => {
+  const choice = renderNode({ type: 'multiplechoice', title: 'Pick one', items: ['A', 'B'], selected: 'A' });
+  const datetime = renderNode({ type: 'datetimeinput', title: 'When', value: '2026-03-06T12:00' });
+  const textField = renderNode({ type: 'textfield', variant: 'long', label: 'Notes', value: 'hello' });
+  const actionButton = renderNode({ type: 'button', variant: 'destructive', label: 'Delete', action: { kind: 'delete', target: 'item-1' } });
+
+  assert.match(choice, /type-choicepicker/);
+  assert.match(choice, /choice-item/);
+  assert.match(choice, /is-selected/);
+  assert.match(datetime, /datetime-local/);
+  assert.match(textField, /<textarea/);
+  assert.match(actionButton, /ui-button destructive/);
+  assert.match(actionButton, /data-action=/);
+});
+
 test('renderNode humanizes technical source errors for non-technical UX', () => {
   const primitive = renderNode('Missing source: nodes.location_get (error: node required).');
   const list = renderNode({

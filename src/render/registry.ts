@@ -94,6 +94,31 @@ function sanitizeUrl(value: unknown): string | null {
   return raw;
 }
 
+function sanitizeInputValue(value: unknown, maxLength = 200): string {
+  return normalizeText(value).slice(0, maxLength);
+}
+
+function sanitizeVariant(value: unknown, allowed: string[], fallback: string): string {
+  const v = normalizeText(value).toLowerCase();
+  return allowed.includes(v) ? v : fallback;
+}
+
+function sanitizeActionPayload(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '{}';
+  try {
+    const cleaned = JSON.stringify(payload, (_key, val) => {
+      if (typeof val === 'string') return sanitizeInputValue(val, 200);
+      if (typeof val === 'number' || typeof val === 'boolean' || val == null) return val;
+      if (Array.isArray(val)) return val.slice(0, 20);
+      if (typeof val === 'object') return val;
+      return undefined;
+    });
+    return cleaned || '{}';
+  } catch {
+    return '{}';
+  }
+}
+
 function renderKeyValueTable(obj: Record<string, unknown>): string {
   const entries = Object.entries(obj || {});
   if (!entries.length) return '';
@@ -158,6 +183,47 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
     const children = normalizeChildren(node);
     const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
     return `<section class="generic-block type-section">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${body ? `<p>${escapeHtml(body)}</p>` : ''}${childHtml}</section>`;
+  },
+  choicepicker: (node) => {
+    const title = normalizeText(node.title || node.label || 'Choose one');
+    const items = asArray(node.items || node.options || node.choices || node.values);
+    const selected = sanitizeInputValue(node.selected || node.value || '', 100).toLowerCase();
+    const optionsHtml = items.map((item, idx) => {
+      const label = typeof item === 'string' ? item : sanitizeInputValue((item as Record<string, unknown>)?.label || (item as Record<string, unknown>)?.title || item, 120);
+      const normalized = label.toLowerCase();
+      const active = selected && selected === normalized;
+      return `<button type="button" class="choice-item${active ? ' is-selected' : ''}" aria-pressed="${active ? 'true' : 'false'}" data-choice-index="${idx}">${escapeHtml(label || `Option ${idx + 1}`)}</button>`;
+    }).join('');
+    return `<section class="generic-block type-choicepicker">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<div class="choice-grid">${optionsHtml || '<p class="muted">No options</p>'}</div></section>`;
+  },
+  datetimeinput: (node) => {
+    const title = normalizeText(node.title || node.label || 'Choose date and time');
+    const value = sanitizeInputValue(node.value || node.defaultValue || '', 40);
+    const min = sanitizeInputValue(node.min || '', 40);
+    const max = sanitizeInputValue(node.max || '', 40);
+    const hint = normalizeText(node.hint || node.helperText || node.description || '');
+    return `<section class="generic-block type-datetime"><h3>${escapeHtml(title)}</h3><input class="ui-input" type="datetime-local" value="${escapeHtml(value)}" ${min ? `min="${escapeHtml(min)}"` : ''} ${max ? `max="${escapeHtml(max)}"` : ''} />${hint ? `<p class="muted">${escapeHtml(hint)}</p>` : ''}</section>`;
+  },
+  textfield: (node) => {
+    const title = normalizeText(node.title || node.label || 'Input');
+    const variant = sanitizeVariant(node.variant || node.format, ['short', 'long', 'date-like'], 'short');
+    const value = sanitizeInputValue(node.value || node.defaultValue || '', variant === 'long' ? 500 : 160);
+    const placeholder = sanitizeInputValue(node.placeholder || '', 120);
+    const required = Boolean(node.required);
+    const validation = normalizeText(node.validationMessage || node.validation || node.error || '');
+    if (variant === 'long') {
+      return `<section class="generic-block type-textfield"><h3>${escapeHtml(title)}</h3><textarea class="ui-input" rows="4" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''}>${escapeHtml(value)}</textarea>${validation ? `<p class="muted">${escapeHtml(validation)}</p>` : ''}</section>`;
+    }
+    const inputType = variant === 'date-like' ? 'date' : 'text';
+    return `<section class="generic-block type-textfield"><h3>${escapeHtml(title)}</h3><input class="ui-input" type="${inputType}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''} />${validation ? `<p class="muted">${escapeHtml(validation)}</p>` : ''}</section>`;
+  },
+  button: (node) => {
+    const label = normalizeText(node.label || node.title || node.text || 'Continue');
+    const variant = sanitizeVariant(node.variant || node.style, ['primary', 'secondary', 'destructive'], 'primary');
+    const loading = Boolean(node.loading);
+    const disabled = Boolean(node.disabled) || loading;
+    const actionPayload = sanitizeActionPayload(node.action || node.payload || null);
+    return `<section class="generic-block type-button"><button type="button" class="ui-button ${variant}" data-action='${escapeHtml(actionPayload)}' ${disabled ? 'disabled' : ''}>${loading ? 'Working…' : escapeHtml(label)}</button></section>`;
   }
 };
 

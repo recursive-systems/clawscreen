@@ -19,6 +19,10 @@ test('toTrustedComponentType maps canonical and alias values', () => {
   assert.equal(toTrustedComponentType('hstack'), 'row');
   assert.equal(toTrustedComponentType('col'), 'column');
   assert.equal(toTrustedComponentType('group'), 'section');
+  assert.equal(toTrustedComponentType('multiplechoice'), 'choicepicker');
+  assert.equal(toTrustedComponentType('datetime'), 'datetimeinput');
+  assert.equal(toTrustedComponentType('input'), 'textfield');
+  assert.equal(toTrustedComponentType('cta'), 'button');
 });
 
 test('toTrustedComponentType normalizes casing and unknownish inputs', () => {
@@ -39,6 +43,10 @@ test('isTrustedComponentType only accepts canonical values', () => {
   assert.equal(isTrustedComponentType('divider'), true);
   assert.equal(isTrustedComponentType('image'), true);
   assert.equal(isTrustedComponentType('section'), true);
+  assert.equal(isTrustedComponentType('choicepicker'), true);
+  assert.equal(isTrustedComponentType('datetimeinput'), true);
+  assert.equal(isTrustedComponentType('textfield'), true);
+  assert.equal(isTrustedComponentType('button'), true);
   assert.equal(isTrustedComponentType('markdown'), false);
   assert.equal(isTrustedComponentType('unknown'), false);
 });
