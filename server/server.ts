@@ -101,9 +101,23 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
   }
 
   const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
-  const { version, event } = validated.value;
+  const { version, event, control, accepted_modalities } = validated.value;
   const taskId = `task_${randomUUID().slice(0, 8)}`;
   const targetText = event.target ? `Target: ${event.target}` : 'No explicit target';
+
+  const provenance = event.provenance || {
+    origin: 'agent' as const,
+    tool: 'a2ui.action',
+    confidence: 0.88,
+    timestamp: new Date().toISOString()
+  };
+
+  const accepted = accepted_modalities?.length ? accepted_modalities : (['form', 'oauth_redirect', 'passkey'] as const);
+  const negotiatedModality = (accepted.includes('oauth_redirect')
+    ? 'oauth_redirect'
+    : accepted.includes('passkey')
+      ? 'passkey'
+      : accepted[0] || 'form') as 'form' | 'oauth_redirect' | 'biometric' | 'voice' | 'passkey';
 
   const queued = createActionResponseEnvelope({
     version,
@@ -119,7 +133,40 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
     progressMessage: `Dispatching ${event.type}`
   });
 
-  const terminal = event.type === 'auth.required'
+  const paused = createActionResponseEnvelope({
+    version,
+    taskId,
+    status: 'paused',
+    progressMessage: 'Task paused by user control'
+  });
+
+  const controlTerminal = control?.signal === 'pause'
+    ? paused
+    : control?.signal === 'resume'
+      ? createActionResponseEnvelope({
+          version,
+          taskId,
+          status: 'running',
+          progressMessage: 'Task resumed by user control'
+        })
+      : control?.signal === 'takeover'
+        ? createActionResponseEnvelope({
+            version,
+            taskId,
+            status: 'input_required',
+            progressMessage: 'Human takeover requested',
+            inputRequired: {
+              reason: control.takeover_reason || 'manual_takeover',
+              required_fields: ['confirmation'],
+              resume_token: `resume_${taskId}`,
+              modality: negotiatedModality,
+              timeout_seconds: 300,
+              fallback_action: 'retry'
+            }
+          })
+        : null;
+
+  const terminal = controlTerminal || (event.type === 'auth.required'
     ? createActionResponseEnvelope({
         version,
         taskId,
@@ -128,7 +175,10 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
         inputRequired: {
           reason: 'auth_handoff',
           required_fields: ['username', 'password_or_passkey'],
-          resume_token: `resume_${taskId}`
+          resume_token: `resume_${taskId}`,
+          modality: negotiatedModality,
+          timeout_seconds: 300,
+          fallback_action: 'retry'
         }
       })
     : createActionResponseEnvelope({
@@ -144,11 +194,21 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
             blocks: [
               { type: 'text', title: 'Type', text: event.type },
               { type: 'text', title: 'Target', text: targetText },
-              { type: 'text', title: 'Timestamp', text: event.timestamp }
+              { type: 'text', title: 'Timestamp', text: event.timestamp },
+              {
+                type: 'notes',
+                title: 'Provenance',
+                text: `Initiator: ${provenance.origin} · Source: ${provenance.tool || 'unknown'} · Confidence: ${typeof provenance.confidence === 'number' ? provenance.confidence.toFixed(2) : 'n/a'}`
+              },
+              {
+                type: 'card',
+                title: 'Human controls',
+                text: 'Use pause, resume, or takeover controls for sensitive tasks.'
+              }
             ]
           }
         }
-      });
+      }));
 
   if (!wantsStream) {
     return res.json(terminal);

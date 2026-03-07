@@ -1,5 +1,22 @@
 import { type JsonValue, toCanonicalEnvelope, type A2UICanonicalEnvelope } from './a2ui.js';
 
+export type A2UIActionProvenance = {
+  origin: 'user' | 'agent' | 'system';
+  session_id?: string;
+  parent_task_id?: string;
+  tool?: string;
+  confidence?: number;
+  timestamp?: string;
+};
+
+export type A2UIModality = 'form' | 'oauth_redirect' | 'biometric' | 'voice' | 'passkey';
+
+export type A2UIHumanControl = {
+  signal: 'pause' | 'resume' | 'takeover' | 'release';
+  resume_token?: string;
+  takeover_reason?: string;
+};
+
 export type A2UIActionEvent = {
   id: string;
   type: string;
@@ -10,19 +27,25 @@ export type A2UIActionEvent = {
     screen?: JsonValue;
     model?: Record<string, JsonValue>;
   };
+  provenance?: A2UIActionProvenance;
 };
 
 export type A2UIActionRequestEnvelope = {
   version: string;
   event: A2UIActionEvent;
+  control?: A2UIHumanControl;
+  accepted_modalities?: A2UIModality[];
 };
 
-export type A2UITaskStatus = 'queued' | 'running' | 'input_required' | 'completed' | 'failed';
+export type A2UITaskStatus = 'queued' | 'running' | 'paused' | 'input_required' | 'completed' | 'failed';
 
 export type A2UIInputRequired = {
   reason: string;
   required_fields: string[];
   resume_token: string;
+  modality?: A2UIModality;
+  timeout_seconds?: number;
+  fallback_action?: 'fail' | 'skip' | 'retry';
 };
 
 export type A2UIActionResponseEnvelope = {
@@ -81,6 +104,33 @@ export function validateActionRequestEnvelope(raw: unknown):
     };
   }
 
+  const provenanceRaw = asObject(event.provenance);
+  const provenance: A2UIActionProvenance | undefined = provenanceRaw
+    ? {
+        origin: (provenanceRaw.origin === 'agent' || provenanceRaw.origin === 'system') ? provenanceRaw.origin : 'user',
+        ...(typeof provenanceRaw.session_id === 'string' ? { session_id: provenanceRaw.session_id } : {}),
+        ...(typeof provenanceRaw.parent_task_id === 'string' ? { parent_task_id: provenanceRaw.parent_task_id } : {}),
+        ...(typeof provenanceRaw.tool === 'string' ? { tool: provenanceRaw.tool } : {}),
+        ...(typeof provenanceRaw.confidence === 'number' ? { confidence: provenanceRaw.confidence } : {}),
+        ...(typeof provenanceRaw.timestamp === 'string' ? { timestamp: provenanceRaw.timestamp } : {})
+      }
+    : undefined;
+
+  const controlRaw = asObject(root.control);
+  const control = controlRaw && ['pause', 'resume', 'takeover', 'release'].includes(String(controlRaw.signal))
+    ? {
+        signal: String(controlRaw.signal) as A2UIHumanControl['signal'],
+        ...(typeof controlRaw.resume_token === 'string' ? { resume_token: controlRaw.resume_token } : {}),
+        ...(typeof controlRaw.takeover_reason === 'string' ? { takeover_reason: controlRaw.takeover_reason } : {})
+      }
+    : undefined;
+
+  const acceptedModalities = Array.isArray(root.accepted_modalities)
+    ? root.accepted_modalities.filter((m): m is A2UIModality =>
+      typeof m === 'string' && ['form', 'oauth_redirect', 'biometric', 'voice', 'passkey'].includes(m)
+    )
+    : undefined;
+
   return {
     ok: true,
     value: {
@@ -91,8 +141,11 @@ export function validateActionRequestEnvelope(raw: unknown):
         timestamp: timestampRaw,
         ...(typeof event.target === 'string' && event.target ? { target: event.target } : {}),
         ...(event.payload !== undefined ? { payload: event.payload as JsonValue } : {}),
-        ...(normalizedSnapshot ? { snapshot: normalizedSnapshot } : {})
-      }
+        ...(normalizedSnapshot ? { snapshot: normalizedSnapshot } : {}),
+        ...(provenance ? { provenance } : {})
+      },
+      ...(control ? { control } : {}),
+      ...(acceptedModalities ? { accepted_modalities: acceptedModalities } : {})
     }
   };
 }
@@ -100,6 +153,7 @@ export function validateActionRequestEnvelope(raw: unknown):
 const TASK_STATUS_ORDER: Record<A2UITaskStatus, number> = {
   queued: 1,
   running: 2,
+  paused: 2,
   input_required: 3,
   completed: 4,
   failed: 4
@@ -109,6 +163,8 @@ export function validateTaskStatusTransition(previous: A2UITaskStatus | null, ne
   if (!previous) return next === 'queued' || next === 'running';
   if (previous === 'completed' || previous === 'failed') return false;
   if (previous === 'input_required') return next === 'running' || next === 'failed';
+  if (previous === 'running') return next === 'running' || next === 'paused' || next === 'input_required' || next === 'completed' || next === 'failed';
+  if (previous === 'paused') return next === 'running' || next === 'failed';
   return TASK_STATUS_ORDER[next] >= TASK_STATUS_ORDER[previous];
 }
 
@@ -126,8 +182,8 @@ export function validateActionResponseEnvelope(raw: unknown, previousStatus: A2U
   if (!taskId) return { ok: false, error: 'Missing required task id (task.id or task_id)' };
 
   const status = typeof task.status === 'string' ? task.status : '';
-  if (!['queued', 'running', 'input_required', 'completed', 'failed'].includes(status)) {
-    return { ok: false, error: 'task.status must be one of queued|running|input_required|completed|failed' };
+  if (!['queued', 'running', 'paused', 'input_required', 'completed', 'failed'].includes(status)) {
+    return { ok: false, error: 'task.status must be one of queued|running|paused|input_required|completed|failed' };
   }
 
   if (!validateTaskStatusTransition(previousStatus, status as A2UITaskStatus)) {
@@ -143,7 +199,16 @@ export function validateActionResponseEnvelope(raw: unknown, previousStatus: A2U
         required_fields: Array.isArray(maybeInputRequired.required_fields)
           ? maybeInputRequired.required_fields.filter((f): f is string => typeof f === 'string' && !!f)
           : [],
-        resume_token: typeof maybeInputRequired.resume_token === 'string' ? maybeInputRequired.resume_token : ''
+        resume_token: typeof maybeInputRequired.resume_token === 'string' ? maybeInputRequired.resume_token : '',
+        ...(typeof maybeInputRequired.modality === 'string' && ['form', 'oauth_redirect', 'biometric', 'voice', 'passkey'].includes(maybeInputRequired.modality)
+          ? { modality: maybeInputRequired.modality as A2UIModality }
+          : {}),
+        ...(typeof maybeInputRequired.timeout_seconds === 'number' && maybeInputRequired.timeout_seconds > 0
+          ? { timeout_seconds: Math.floor(maybeInputRequired.timeout_seconds) }
+          : {}),
+        ...(typeof maybeInputRequired.fallback_action === 'string' && ['fail', 'skip', 'retry'].includes(maybeInputRequired.fallback_action)
+          ? { fallback_action: maybeInputRequired.fallback_action as 'fail' | 'skip' | 'retry' }
+          : {})
       }
     : undefined;
 

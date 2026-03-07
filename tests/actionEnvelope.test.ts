@@ -30,6 +30,31 @@ test('valid action request fixture passes envelope validation', () => {
   }
 });
 
+test('request envelope supports provenance/control/modality negotiation fields', () => {
+  const parsed = validateActionRequestEnvelope({
+    version: '0.9',
+    event: {
+      id: 'evt_1',
+      type: 'button.click',
+      timestamp: new Date().toISOString(),
+      provenance: {
+        origin: 'agent',
+        parent_task_id: 'task_parent',
+        tool: 'openclaw.exec',
+        confidence: 0.91
+      }
+    },
+    control: { signal: 'takeover', takeover_reason: 'needs_human_confirmation' },
+    accepted_modalities: ['oauth_redirect', 'form']
+  });
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.equal(parsed.value.event.provenance?.origin, 'agent');
+    assert.equal(parsed.value.control?.signal, 'takeover');
+    assert.deepEqual(parsed.value.accepted_modalities, ['oauth_redirect', 'form']);
+  }
+});
+
 test('invalid action request fixture is rejected with required-field error', () => {
   const parsed = validateActionRequestEnvelope(fixture('invalid-missing-event-id.json'));
   assert.equal(parsed.ok, false);
@@ -60,9 +85,13 @@ test('action response envelope canonicalizes output and stays compatible with ge
   assert.equal(compatibility.screen?.title, 'Action Applied');
 });
 
-test('task lifecycle transitions enforce queued/running/input_required/completed rules', () => {
+test('task lifecycle transitions enforce queued/running/paused/input_required/completed rules', () => {
   assert.equal(validateTaskStatusTransition(null, 'queued'), true);
   assert.equal(validateTaskStatusTransition('queued', 'running'), true);
+  assert.equal(validateTaskStatusTransition('running', 'paused'), true);
+  assert.equal(validateTaskStatusTransition('paused', 'running'), true);
+  assert.equal(validateTaskStatusTransition('paused', 'failed'), true);
+  assert.equal(validateTaskStatusTransition('paused', 'completed'), false);
   assert.equal(validateTaskStatusTransition('running', 'input_required'), true);
   assert.equal(validateTaskStatusTransition('input_required', 'running'), true);
   assert.equal(validateTaskStatusTransition('running', 'completed'), true);
@@ -83,7 +112,10 @@ test('response validator enforces input_required payload and terminal artifacts/
       input_required: {
         reason: 'mfa_challenge',
         required_fields: ['otp_code'],
-        resume_token: 'resume_123'
+        resume_token: 'resume_123',
+        modality: 'oauth_redirect',
+        timeout_seconds: 120,
+        fallback_action: 'retry'
       }
     }
   }, 'running');
