@@ -668,6 +668,56 @@ a:focus-visible,
   color: var(--error);
 }
 
+.tab-pills {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.tab-pill {
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  padding: 0.35rem 0.7rem;
+  font-size: var(--text-sm);
+}
+
+.tab-pill.is-active {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--bg-page);
+}
+
+.ui-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.ui-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.modal-shell {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-dim);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 /* ================================================================
    Image rendering
    ================================================================ */

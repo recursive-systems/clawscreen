@@ -66,6 +66,10 @@ test('renderNode supports interactive foundation components for slice A', () => 
   const datetime = renderNode({ type: 'datetimeinput', title: 'When', value: '2026-03-06T12:00' });
   const textField = renderNode({ type: 'textfield', variant: 'long', label: 'Notes', value: 'hello' });
   const actionButton = renderNode({ type: 'button', variant: 'destructive', label: 'Delete', action: { kind: 'delete', target: 'item-1' } });
+  const tabs = renderNode({ type: 'tabs', items: ['Overview', 'Alerts'], active: 'alerts' });
+  const slider = renderNode({ type: 'slider', min: 0, max: 10, value: 4, step: 2 });
+  const checkbox = renderNode({ type: 'checkbox', label: 'Enable sync', checked: true });
+  const modal = renderNode({ type: 'modal', title: 'Approve action', body: 'Proceed?', confirmLabel: 'Approve', cancelLabel: 'Cancel' });
 
   assert.match(choice, /type-choicepicker/);
   assert.match(choice, /choice-item/);
@@ -74,6 +78,14 @@ test('renderNode supports interactive foundation components for slice A', () => 
   assert.match(textField, /<textarea/);
   assert.match(actionButton, /ui-button destructive/);
   assert.match(actionButton, /data-action=/);
+  assert.match(tabs, /type-tabs/);
+  assert.match(tabs, /tab-pill/);
+  assert.match(slider, /type-slider/);
+  assert.match(slider, /type="range"/);
+  assert.match(checkbox, /type-checkbox/);
+  assert.match(checkbox, /type="checkbox"/);
+  assert.match(modal, /type-modal/);
+  assert.match(modal, /modal-actions/);
 });
 
 test('renderNode humanizes technical source errors for non-technical UX', () => {

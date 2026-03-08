@@ -147,7 +147,16 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
   list: (node) => {
     const items = asArray(node.items || node.values || node.children);
     const title = node.title || node.label;
-    return `<section class="generic-block type-list">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<ul>${items.map((item) => `<li>${renderPrimitive(item)}</li>`).join('')}</ul></section>`;
+    const template = normalizeText(node.template || node.itemTemplate || '');
+    const content = items.map((item) => {
+      if (template && typeof item === 'object' && item !== null && !Array.isArray(item)) {
+        const obj = item as Record<string, unknown>;
+        const rendered = template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_m, key) => escapeHtml(String(obj[key] ?? '')));
+        return `<li>${rendered}</li>`;
+      }
+      return `<li>${renderPrimitive(item)}</li>`;
+    }).join('');
+    return `<section class="generic-block type-list">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<ul>${content}</ul></section>`;
   },
   metric: (node) => {
     return `<section class="generic-block metric"><p class="metric-label">${escapeHtml(node.label || node.title || 'Metric')}</p><p class="metric-value">${renderPrimitive(node.value ?? node.metric ?? node.number)}</p>${node.delta ? `<p class="metric-delta">${escapeHtml(node.delta)}</p>` : ''}</section>`;
@@ -224,6 +233,44 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
     const disabled = Boolean(node.disabled) || loading;
     const actionPayload = sanitizeActionPayload(node.action || node.payload || null);
     return `<section class="generic-block type-button"><button type="button" class="ui-button ${variant}" data-action='${escapeHtml(actionPayload)}' ${disabled ? 'disabled' : ''}>${loading ? 'Working…' : escapeHtml(label)}</button></section>`;
+  },
+  tabs: (node) => {
+    const title = normalizeText(node.title || node.label || 'Sections');
+    const tabs = asArray(node.items || node.tabs || node.children || node.values);
+    const active = sanitizeInputValue(node.active || node.value || '', 100).toLowerCase();
+    const pills = tabs.map((item, idx) => {
+      const label = typeof item === 'string'
+        ? sanitizeInputValue(item, 80)
+        : sanitizeInputValue((item as Record<string, unknown>)?.label || (item as Record<string, unknown>)?.title || `Tab ${idx + 1}`, 80);
+      const isActive = active ? active === label.toLowerCase() : idx === 0;
+      return `<button type="button" class="tab-pill${isActive ? ' is-active' : ''}" aria-pressed="${isActive ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+    }).join('');
+    return `<section class="generic-block type-tabs">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<div class="tab-pills">${pills || '<p class="muted">No tabs</p>'}</div></section>`;
+  },
+  slider: (node) => {
+    const title = normalizeText(node.title || node.label || 'Adjust value');
+    const minRaw = Number(node.min ?? 0);
+    const maxRaw = Number(node.max ?? 100);
+    const min = Number.isFinite(minRaw) ? minRaw : 0;
+    const max = Number.isFinite(maxRaw) ? maxRaw : 100;
+    const valueRaw = Number(node.value ?? min);
+    const value = Number.isFinite(valueRaw) ? Math.min(Math.max(valueRaw, min), max) : min;
+    const stepRaw = Number(node.step ?? 1);
+    const step = Number.isFinite(stepRaw) && stepRaw > 0 ? stepRaw : 1;
+    return `<section class="generic-block type-slider"><h3>${escapeHtml(title)}</h3><input class="ui-slider" type="range" min="${min}" max="${max}" step="${step}" value="${value}" /><p class="muted">Current value: ${escapeHtml(value)}</p></section>`;
+  },
+  checkbox: (node) => {
+    const label = normalizeText(node.label || node.title || 'Enable');
+    const checked = Boolean(node.checked ?? node.value);
+    const hint = normalizeText(node.hint || node.helperText || '');
+    return `<section class="generic-block type-checkbox"><label class="ui-checkbox"><input type="checkbox" ${checked ? 'checked' : ''} /><span>${escapeHtml(label)}</span></label>${hint ? `<p class="muted">${escapeHtml(hint)}</p>` : ''}</section>`;
+  },
+  modal: (node) => {
+    const title = normalizeText(node.title || node.label || 'Confirmation');
+    const body = normalizeText(node.body || node.text || node.content || 'Please review before continuing.');
+    const primary = normalizeText(node.primaryLabel || node.confirmLabel || 'Confirm');
+    const secondary = normalizeText(node.secondaryLabel || node.cancelLabel || 'Cancel');
+    return `<section class="generic-block type-modal"><div class="modal-shell"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p><div class="modal-actions"><button type="button" class="ui-button secondary">${escapeHtml(secondary)}</button><button type="button" class="ui-button primary">${escapeHtml(primary)}</button></div></div></section>`;
   }
 };
 

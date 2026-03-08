@@ -272,7 +272,7 @@ export function getA2UICapabilities(): A2UICapabilities {
       canonical: ['beginRendering', 'surfaceUpdate', 'dataModelUpdate'],
       aliases: ['createSurface', 'updateComponents', 'updateDataModel', 'sendDataModel']
     },
-    components: ['text', 'list', 'metric', 'card', 'notes', 'divider', 'image', 'icon', 'row', 'column', 'section', 'choicepicker', 'datetimeinput', 'textfield', 'button'],
+    components: ['text', 'list', 'metric', 'card', 'notes', 'divider', 'image', 'icon', 'row', 'column', 'section', 'choicepicker', 'datetimeinput', 'textfield', 'button', 'tabs', 'slider', 'checkbox', 'modal'],
     modalities: ['text', 'form', 'file', 'media']
   };
 }

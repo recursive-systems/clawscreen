@@ -13,7 +13,11 @@ export const TRUSTED_COMPONENT_TYPES = [
   'choicepicker',
   'datetimeinput',
   'textfield',
-  'button'
+  'button',
+  'tabs',
+  'slider',
+  'checkbox',
+  'modal'
 ] as const;
 
 export type TrustedComponentType = (typeof TRUSTED_COMPONENT_TYPES)[number];
@@ -61,7 +65,15 @@ const TYPE_ALIAS_MAP: Record<string, TrustedComponentType> = {
   button: 'button',
   cta: 'button',
   actionbutton: 'button',
-  action_button: 'button'
+  action_button: 'button',
+  tabs: 'tabs',
+  tabset: 'tabs',
+  slider: 'slider',
+  range: 'slider',
+  checkbox: 'checkbox',
+  toggle: 'checkbox',
+  modal: 'modal',
+  dialog: 'modal'
 };
 
 export function isTrustedComponentType(value: string): value is TrustedComponentType {
