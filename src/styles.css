@@ -1067,6 +1067,18 @@ pre {
   color: var(--ok);
 }
 
+.source-badge.trust-untrusted {
+  background: rgba(194, 80, 74, 0.08);
+  border-color: rgba(194, 80, 74, 0.35);
+  color: var(--error);
+}
+
+.source-badge.capability-badge {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--line);
+  color: var(--text-secondary);
+}
+
 .screen-updated-at {
   margin: 0;
   color: var(--text-secondary);

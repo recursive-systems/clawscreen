@@ -127,3 +127,29 @@ test('resume control rejects missing interrupt context', async () => {
   const payload = await res.json() as any;
   assert.match(payload.error.message, /resume\.interrupt_id|resume_token/);
 });
+
+test('action route returns canonical run summary and replayable timeline', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: { id: 'evt_timeline', type: 'button.click', target: '#ship-it', timestamp: new Date().toISOString() }
+    })
+  });
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.ok(payload.run?.runId);
+  assert.equal(payload.run.summary.latestKind, 'completed');
+  assert.equal(payload.run.summary.trust, 'trusted');
+  assert.equal(payload.run.summary.capabilities.interrupts, true);
+
+  const replay = await fetch(`${base}/a2ui/runs/${payload.run.runId}`);
+  assert.equal(replay.ok, true);
+  const replayPayload = await replay.json() as any;
+  assert.equal(replayPayload.run.summary.runId, payload.run.runId);
+  assert.ok(Array.isArray(replayPayload.run.events));
+  assert.ok(replayPayload.run.events.some((event: any) => event.kind === 'run_started'));
+  assert.ok(replayPayload.run.events.some((event: any) => event.kind === 'ui_delta'));
+  assert.equal(replayPayload.run.events.at(-1).kind, 'completed');
+});

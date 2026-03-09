@@ -4,8 +4,16 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { canonicalToCompatiblePayload, getA2UICapabilities, toCanonicalEnvelope, validateRemoteA2UIIntent } from '../shared/a2ui.js';
 import { createActionResponseEnvelope, validateActionRequestEnvelope } from '../shared/actionEnvelope.js';
+import {
+  canonicalErrorEvents,
+  canonicalEventsFromActionResponse,
+  canonicalEventsFromGenerateResult,
+  capabilitiesFromA2UI,
+  createRunId
+} from '../shared/canonicalRunEvent.js';
 import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
 import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
+import { createRunTimelineStore } from './runTimeline.js';
 
 const PORT = Number(process.env.A2UI_PORT || 18841);
 const HOST = process.env.A2UI_HOST || '0.0.0.0';
@@ -13,6 +21,14 @@ const HOST = process.env.A2UI_HOST || '0.0.0.0';
 const gateway = createOpenClawGateway(getOpenClawGatewayConfigFromEnv());
 const GATEWAY_SESSION_KEY = gateway.config.sessionKey;
 const GATEWAY_RESPONSE_TIMEOUT_MS = gateway.config.responseTimeoutMs;
+const runTimeline = createRunTimelineStore();
+const advertisedCapabilities = capabilitiesFromA2UI({
+  ...getA2UICapabilities(),
+  messageTypes: getA2UICapabilities().messageTypes.canonical,
+  payloadLimitKb: 256,
+  interrupts: true,
+  screenshot: false
+});
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -33,10 +49,19 @@ app.get('/a2ui/capabilities', (_req: Request, res: Response) => {
   res.json({ ok: true, capabilities: getA2UICapabilities() });
 });
 
+app.get('/a2ui/runs/:runId', (req: Request, res: Response) => {
+  const runId = String(req.params.runId || '').trim();
+  if (!runId) {
+    return res.status(400).json({ ok: false, error: { code: 'bad_request', message: 'Missing runId' } });
+  }
+  return res.json({ ok: true, run: runTimeline.getTimeline(runId) });
+});
+
 app.post('/a2ui/generate', async (req: Request, res: Response) => {
   const prompt = String(req.body?.prompt || '').trim();
   const context = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {};
   const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
+  const runId = createRunId('generate');
 
   if (!prompt) {
     return res.status(400).json({ ok: false, error: { code: 'bad_request', message: 'Missing required field: prompt (string)' } });
@@ -45,11 +70,24 @@ app.post('/a2ui/generate', async (req: Request, res: Response) => {
   if (!wantsStream) {
     try {
       const normalized = await generateViaOpenClawGateway({ prompt, context });
-      return res.json({ ok: true, provider: 'openclaw-gateway', a2ui: normalized });
+      const envelope = toCanonicalEnvelope(normalized);
+      const run = runTimeline.appendMany(runId, canonicalEventsFromGenerateResult({
+        runId,
+        envelope,
+        capabilities: advertisedCapabilities,
+        summary: `Generate run for: ${prompt.slice(0, 48)}`
+      }));
+      return res.json({ ok: true, provider: 'openclaw-gateway', a2ui: normalized, run });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown generation error';
       const isGatewayConfigIssue = /OPENCLAW_GATEWAY_|gateway call failed|openclaw\s+gateway\s+call/i.test(message);
       const isValidationFailed = /Unsupported message type|ValidationFailed|failed validation/i.test(message);
+      const run = runTimeline.appendMany(runId, canonicalErrorEvents({
+        runId,
+        message,
+        capabilities: advertisedCapabilities,
+        code: isGatewayConfigIssue ? 'gateway_unavailable' : isValidationFailed ? 'ValidationFailed' : 'generation_failed'
+      }));
       return res.status(isGatewayConfigIssue ? 503 : 500).json({
         ok: false,
         error: {
@@ -61,7 +99,8 @@ app.post('/a2ui/generate', async (req: Request, res: Response) => {
                 'For A2UI v0.9 aliases use createSurface/updateComponents/updateDataModel/sendDataModel.'
               ]
             : undefined
-        }
+        },
+        run
       });
     }
   }
@@ -83,12 +122,29 @@ app.post('/a2ui/generate', async (req: Request, res: Response) => {
     const normalized = await generateViaOpenClawGateway(
       { prompt, context },
       (status) => sendEvent('status', { text: status }),
-      (partial) => sendEvent('partial', { ok: true, provider: 'openclaw-gateway', a2ui: partial })
+      (partial) => {
+        const envelope = toCanonicalEnvelope(partial);
+        const run = runTimeline.appendMany(runId, canonicalEventsFromGenerateResult({
+          runId,
+          envelope,
+          capabilities: advertisedCapabilities,
+          summary: 'Partial generate update'
+        }));
+        sendEvent('partial', { ok: true, provider: 'openclaw-gateway', a2ui: partial, run });
+      }
     );
-    sendEvent('result', { ok: true, provider: 'openclaw-gateway', a2ui: normalized });
+    const envelope = toCanonicalEnvelope(normalized);
+    const run = runTimeline.appendMany(runId, canonicalEventsFromGenerateResult({
+      runId,
+      envelope,
+      capabilities: advertisedCapabilities,
+      summary: `Generate run for: ${prompt.slice(0, 48)}`
+    }));
+    sendEvent('result', { ok: true, provider: 'openclaw-gateway', a2ui: normalized, run });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown generation error';
-    sendEvent('error', { message });
+    const run = runTimeline.appendMany(runId, canonicalErrorEvents({ runId, message, capabilities: advertisedCapabilities }));
+    sendEvent('error', { message, run });
   }
 
   res.end();
@@ -103,6 +159,7 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
   const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
   const { version, event, control, accepted_modalities, resume } = validated.value;
   const taskId = `task_${randomUUID().slice(0, 8)}`;
+  const runId = createRunId('action');
   const targetText = event.target ? `Target: ${event.target}` : 'No explicit target';
 
   const provenance = event.provenance || {
@@ -243,8 +300,15 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
         }
       }));
 
+  const run = runTimeline.appendMany(runId, canonicalEventsFromActionResponse({
+    runId,
+    response: terminal,
+    capabilities: advertisedCapabilities,
+    provenance
+  }));
+
   if (!wantsStream) {
-    return res.json(terminal);
+    return res.json({ ...terminal, run });
   }
 
   res.writeHead(200, {
@@ -257,11 +321,11 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
     res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  sendEvent('task', queued);
+  sendEvent('task', { ...queued, run: runTimeline.appendMany(runId, canonicalEventsFromActionResponse({ runId, response: queued, capabilities: advertisedCapabilities, provenance })) });
   await sleep(250);
-  sendEvent('task', running);
+  sendEvent('task', { ...running, run: runTimeline.appendMany(runId, canonicalEventsFromActionResponse({ runId, response: running, capabilities: advertisedCapabilities, provenance })) });
   await sleep(250);
-  sendEvent('task', terminal);
+  sendEvent('task', { ...terminal, run });
   res.end();
 });
 

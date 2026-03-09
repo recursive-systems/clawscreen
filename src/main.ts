@@ -31,6 +31,26 @@ type ScreenProfile = {
 type Primitive = string | number | boolean | null | undefined;
 type Json = Primitive | Json[] | { [key: string]: Json };
 
+type RunSummary = {
+  runId: string;
+  latestEventId: string;
+  latestKind: string;
+  latestStatus?: string;
+  trust: 'trusted' | 'untrusted';
+  sourceLabel: string;
+  eventCount: number;
+  startedAt: string;
+  updatedAt: string;
+  capabilities?: {
+    components: string[];
+    modalities: string[];
+    interrupts: boolean;
+    screenshot: boolean;
+    payloadLimitKb?: number;
+    messageTypes?: string[];
+  };
+};
+
 const els = {
   app: document.getElementById('app') as HTMLElement,
   time: document.getElementById('timeDisplay') as HTMLElement,
@@ -74,6 +94,7 @@ const state: {
   activeProfileId: string;
   autoRefreshTimer: number | null;
   isSubmitting: boolean;
+  runSummary: RunSummary | null;
 } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
@@ -82,7 +103,8 @@ const state: {
   profiles: [],
   activeProfileId: '',
   autoRefreshTimer: null,
-  isSubmitting: false
+  isSubmitting: false,
+  runSummary: null
 };
 
 const offlineFallbackPayload: A2UICompatiblePayload = {
@@ -179,6 +201,15 @@ function normalizeSourceLabel(value: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function extractRunSummary(raw: unknown): RunSummary | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const candidate = (raw as { run?: unknown }).run;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+  const summary = (candidate as { summary?: unknown }).summary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null;
+  return summary as RunSummary;
+}
+
 function collectSourceLabels(payload: A2UICompatiblePayload): string[] {
   const labels = new Set<string>();
 
@@ -218,14 +249,28 @@ function collectSourceLabels(payload: A2UICompatiblePayload): string[] {
 
 function refreshTrustMeta(payload: A2UICompatiblePayload) {
   const sources = collectSourceLabels(payload);
-  if (!sources.length) {
+  const badges: string[] = [];
+
+  if (state.runSummary) {
+    badges.push(`<span class="source-badge trust-${state.runSummary.trust}">${state.runSummary.trust === 'trusted' ? 'Trusted path' : 'Untrusted path'}</span>`);
+    badges.push(`<span class="source-badge">${normalizeSourceLabel(state.runSummary.sourceLabel || 'Run timeline')}</span>`);
+    badges.push(`<span class="source-badge capability-badge">${state.runSummary.eventCount} event${state.runSummary.eventCount === 1 ? '' : 's'}</span>`);
+    if (state.runSummary.capabilities?.interrupts) badges.push('<span class="source-badge capability-badge">Interrupts</span>');
+    if (state.runSummary.capabilities?.modalities?.length) {
+      badges.push(`<span class="source-badge capability-badge">${state.runSummary.capabilities.modalities.slice(0, 2).join(' · ')}</span>`);
+    }
+  }
+
+  if (!sources.length && !badges.length) {
     els.sourceBadges.innerHTML = '<span class="trust-placeholder">Source: generated locally</span>';
   } else {
-    els.sourceBadges.innerHTML = sources.map((source) => `<span class="source-badge">${source}</span>`).join('');
+    const sourceBadges = sources.map((source) => `<span class="source-badge">${source}</span>`);
+    els.sourceBadges.innerHTML = [...badges, ...sourceBadges].join('');
   }
 
   const screen = isRecord(payload.screen) ? payload.screen : {};
   const timestampCandidate =
+    state.runSummary?.updatedAt ||
     (typeof screen.updatedAt === 'string' && screen.updatedAt) ||
     (typeof screen.lastUpdated === 'string' && screen.lastUpdated) ||
     (typeof screen.generatedAt === 'string' && screen.generatedAt) ||
@@ -753,6 +798,9 @@ function syncRenderSurface(nodesToRender: unknown[]) {
 }
 
 function renderA2ui(payload: unknown, source: string) {
+  if (/local|offline|startup|profile-switch/.test(source) && source !== 'startup-profile' && source !== 'startup-lkg') {
+    state.runSummary = null;
+  }
   const normalized = normalizeA2uiPayload(payload, state.renderState);
   if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
 
@@ -841,11 +889,13 @@ async function submitPrompt(prompt: string, source = 'prompt') {
       },
       onPartial: (partialPayload) => {
         try {
+          state.runSummary = extractRunSummary(partialPayload);
           renderA2ui(unwrapA2uiPayload(partialPayload), 'partial');
           setUiState('rendering', 'Live updates are in. Finalizing your full screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
+    state.runSummary = extractRunSummary(payload);
     renderA2ui(unwrapA2uiPayload(payload), source);
   } catch (err) {
     state.lastError = err as Error;
