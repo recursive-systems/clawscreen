@@ -120,3 +120,23 @@ test('new display/layout fixture types survive canonical normalization', () => {
 
   assert.deepEqual(blockTypes, ['section', 'row', 'column']);
 });
+
+test('interactive parity fixture preserves v0.9 aliases, surface blocks, and model bindings', () => {
+  const envelope = toCanonicalEnvelope(loadFixture('a2ui-valid/interactive-parity-slice.json'));
+  assert.deepEqual(
+    envelope.messages.map((msg) => msg.type),
+    ['beginRendering', 'dataModelUpdate', 'surfaceUpdate']
+  );
+
+  const state = applyCanonicalMessages(envelope.messages, createInitialRenderState(envelope.version));
+  assert.equal(state.version, '0.9');
+  assert.deepEqual(state.model, {
+    approval_note: 'Needs finance review',
+    due_date: '2026-03-15',
+    reviewers: ['Ana', 'Priya'],
+    ship_at: '2026-03-16T09:30'
+  });
+
+  const blockTypes = (state.screen?.blocks || []).map((block) => block.type);
+  assert.deepEqual(blockTypes, ['button', 'textfield', 'textfield', 'multiplechoice', 'datetimeinput']);
+});

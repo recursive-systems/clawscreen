@@ -153,3 +153,28 @@ test('action route returns canonical run summary and replayable timeline', async
   assert.ok(replayPayload.run.events.some((event: any) => event.kind === 'ui_delta'));
   assert.equal(replayPayload.run.events.at(-1).kind, 'completed');
 });
+
+test('button action accepts snapshot model and responds with processed artifact', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: {
+        id: 'evt_snapshot',
+        type: 'button.click',
+        target: '#approve-btn',
+        timestamp: new Date().toISOString(),
+        payload: { type: 'button.click', target: 'approve-btn', intent: 'approve_release' },
+        snapshot: {
+          model: { approval_note: 'Looks good', due_date: '2026-03-15' }
+        }
+      }
+    })
+  });
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.equal(payload.task.status, 'completed');
+  assert.equal(payload.task.outcome, 'success');
+  assert.equal(payload.task.artifact.messages[1].screen.title, 'Action processed');
+});

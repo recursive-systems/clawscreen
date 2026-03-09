@@ -344,9 +344,24 @@ type GenerateInput = { prompt: string; context: Record<string, unknown> };
 type Block = {
   type: string;
   title?: string;
+  label?: string;
   text?: string;
+  body?: string;
   items?: string[];
   value?: string;
+  selected?: string | string[];
+  multiple?: boolean;
+  variant?: string;
+  bind?: string;
+  placeholder?: string;
+  required?: boolean;
+  validationState?: 'valid' | 'invalid';
+  validationMessage?: string;
+  action?: Record<string, unknown>;
+  min?: string;
+  max?: string;
+  loading?: boolean;
+  disabled?: boolean;
   delta?: string;
   children?: Block[];
   src?: string;
@@ -378,7 +393,7 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, on
       'Return STRICT JSON only. No markdown. No prose.',
       'Output exactly one object with this shape:',
       '{"version":"0.8","screen":{"title":string,"subtitle":string,"blocks":Block[]}}',
-      'Allowed block types only: text, list, metric, card, notes, divider, image, icon, row, column, section.',
+      'Allowed block types only: text, list, metric, card, notes, divider, image, icon, row, column, section, button, textfield, choicepicker, multiplechoice, datetimeinput.',
       '',
       'Design principles — produce clear, useful dashboards first:',
       '- Start with actionable information (metrics, lists, next actions) before decorative elements.',
@@ -393,11 +408,14 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, on
       '- Use column to stack related blocks vertically within a row.',
       '- Use section to group blocks under a heading.',
       '- Use icon for symbolic status markers.',
+      '- If the user asks for interactive controls, emit those exact component types and include fields they need to render: button(label/action), textfield(label|placeholder|bind|variant), choicepicker(items|bind|multiple|selected), datetimeinput(label|bind|value|min|max).',
+      '- Preserve aliases requested by upstream clients (e.g. multiplechoice) and prefer bind keys for stateful controls.',
       'Never include HTML/script tags, javascript: URLs, or inline event handlers.',
       'Each block must be complete:',
       '- list: must include at least one item',
       '- metric: must include value',
       '- image: must include a valid https:// src URL',
+      '- choicepicker/multiplechoice: must include at least one item',
       '- card/notes/text: must include non-empty text/body/content',
       'If data is unavailable after attempting tools, use plain-language user-facing copy (no raw URLs, no internal error text). Example: "Some live data is unavailable right now."',
       'Keep response concise and dashboard-oriented.',
@@ -682,7 +700,8 @@ function normalizeBlock(input: unknown): Block | null {
   if (typeof input !== 'object') return null;
 
   const i = input as Record<string, any>;
-  const type = coerceTrustedComponentType(i.type || i.kind || i.component, 'card');
+  const rawType = cleanText(i.type || i.kind || i.component).toLowerCase();
+  const type = coerceTrustedComponentType(rawType, 'card');
   const block: Block = { type };
   const title = cleanText(i.title || i.label);
   if (title) block.title = title;
@@ -723,6 +742,91 @@ function normalizeBlock(input: unknown): Block | null {
     return block;
   }
 
+  if (type === 'button') {
+    const label = cleanText(i.label || i.title || i.text || i.body) || 'Run action';
+    block.label = label;
+    const variant = cleanText(i.variant || i.style || i.intent).toLowerCase();
+    if (variant === 'primary' || variant === 'secondary' || variant === 'destructive') block.variant = variant;
+    if (i.disabled === true) block.disabled = true;
+    if (i.loading === true) block.loading = true;
+    const actionType = cleanText(i?.action?.type || i?.action?.kind || i?.payload?.type || i?.payload?.kind || i.type || 'button.click');
+    const actionTarget = cleanText(i?.action?.target || i?.payload?.target || i.target);
+    const actionIntent = cleanText(i?.action?.intent || i?.payload?.intent || i.intent);
+    block.action = {
+      type: actionType || 'button.click',
+      ...(actionTarget ? { target: actionTarget } : {}),
+      ...(actionIntent ? { intent: actionIntent } : {})
+    };
+    return block;
+  }
+
+  if (type === 'textfield') {
+    const label = cleanText(i.label || i.title);
+    if (label) block.label = label;
+    const bind = cleanBinding(i.bind || i.binding || i.modelKey || i.name);
+    if (bind) block.bind = bind;
+    const placeholder = cleanText(i.placeholder || i.hint);
+    if (placeholder) block.placeholder = placeholder;
+    const variantRaw = cleanText(i.variant || i.mode || i.inputType).toLowerCase();
+    if (variantRaw === 'long' || variantRaw === 'short' || variantRaw === 'date-like' || variantRaw === 'email') {
+      block.variant = variantRaw;
+    }
+    const value = cleanText(i.value ?? i.text ?? i.body ?? i.content);
+    if (value) block.value = value;
+    if (i.required === true) block.required = true;
+    const validationState = cleanText(i.validationState || i.validation || i.state).toLowerCase();
+    if (validationState === 'invalid' || validationState === 'error') block.validationState = 'invalid';
+    if (validationState === 'valid' || validationState === 'success') block.validationState = 'valid';
+    const validationMessage = cleanText(i.validationMessage || i.validationText || i.error || i.message);
+    if (validationMessage) block.validationMessage = validationMessage;
+    return block;
+  }
+
+  if (type === 'choicepicker') {
+    const label = cleanText(i.label || i.title);
+    if (label) block.label = label;
+    const bind = cleanBinding(i.bind || i.binding || i.modelKey || i.name);
+    if (bind) block.bind = bind;
+    const itemsRaw = Array.isArray(i.items)
+      ? i.items
+      : Array.isArray(i.options)
+        ? i.options
+        : Array.isArray(i.choices)
+          ? i.choices
+          : [];
+    const items = itemsRaw.map((x) => flattenListItem(x)).filter(Boolean).slice(0, 10);
+    if (!items.length) return null;
+    block.items = items;
+    const explicitMultiple = i.multiple === true || i.multi === true;
+    block.multiple = explicitMultiple || rawType === 'multiplechoice';
+    if (Array.isArray(i.selected)) {
+      block.selected = i.selected.map((x: unknown) => cleanText(x)).filter(Boolean).slice(0, 10);
+    } else {
+      const selected = cleanText(i.selected ?? i.value);
+      if (selected) block.selected = selected;
+    }
+    return block;
+  }
+
+  if (type === 'datetimeinput') {
+    const label = cleanText(i.label || i.title);
+    if (label) block.label = label;
+    const bind = cleanBinding(i.bind || i.binding || i.modelKey || i.name);
+    if (bind) block.bind = bind;
+    const value = cleanText(i.value ?? i.datetime ?? i.dateTime ?? i.date);
+    if (value) block.value = value;
+    const min = cleanText(i.min);
+    const max = cleanText(i.max);
+    if (min) block.min = min;
+    if (max) block.max = max;
+    const validationState = cleanText(i.validationState || i.validation || i.state).toLowerCase();
+    if (validationState === 'invalid' || validationState === 'error') block.validationState = 'invalid';
+    if (validationState === 'valid' || validationState === 'success') block.validationState = 'valid';
+    const validationMessage = cleanText(i.validationMessage || i.validationText || i.error || i.message);
+    if (validationMessage) block.validationMessage = validationMessage;
+    return block;
+  }
+
   if (type === 'row' || type === 'column' || type === 'section') {
     const childrenSource = Array.isArray(i.children)
       ? i.children
@@ -757,6 +861,7 @@ function getRenderableIssues(a2ui: Normalized): string[] {
     const t = String(b?.type || 'card');
     if (t === 'list' && (!Array.isArray(b.items) || !b.items.length)) issues.push(`block[${idx}] list has no items`);
     if (t === 'metric' && !cleanText(b.value)) issues.push(`block[${idx}] metric has no value`);
+    if (t === 'choicepicker' && (!Array.isArray(b.items) || !b.items.length)) issues.push(`block[${idx}] choicepicker has no items`);
     if ((t === 'card' || t === 'notes' || t === 'text') && !cleanText(b.text)) issues.push(`block[${idx}] ${t} has no text`);
   });
 
@@ -805,4 +910,11 @@ function cleanUrl(value: unknown): string {
   }
 
   return raw.slice(0, 1024);
+}
+
+function cleanBinding(value: unknown): string {
+  const candidate = cleanText(value).toLowerCase();
+  if (!candidate) return '';
+  const normalized = candidate.replace(/[^a-z0-9_.-]/g, '_').replace(/_+/g, '_').replace(/^[_\-.]+|[_\-.]+$/g, '');
+  return normalized.slice(0, 80);
 }

@@ -1,0 +1,54 @@
+{
+  "version": "0.9",
+  "messages": [
+    { "type": "createSurface", "version": "0.9" },
+    {
+      "type": "updateDataModel",
+      "version": "0.9",
+      "dataModel": {
+        "approval_note": "Needs finance review",
+        "due_date": "2026-03-15",
+        "reviewers": ["Ana", "Priya"],
+        "ship_at": "2026-03-16T09:30"
+      }
+    },
+    {
+      "type": "updateComponents",
+      "version": "0.9",
+      "surface": {
+        "title": "Interactive Parity",
+        "blocks": [
+          {
+            "type": "button",
+            "label": "Approve",
+            "variant": "primary",
+            "action": { "type": "button.click", "target": "approve-btn", "intent": "approve_release" }
+          },
+          {
+            "type": "textfield",
+            "variant": "long",
+            "bind": "approval_note",
+            "label": "Approval note"
+          },
+          {
+            "type": "textfield",
+            "variant": "date-like",
+            "bind": "due_date",
+            "label": "Due date"
+          },
+          {
+            "type": "multiplechoice",
+            "multiple": true,
+            "bind": "reviewers",
+            "items": ["Ana", "Priya", "Sam"]
+          },
+          {
+            "type": "datetimeinput",
+            "bind": "ship_at",
+            "label": "Ship at"
+          }
+        ]
+      }
+    }
+  ]
+}
