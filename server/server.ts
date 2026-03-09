@@ -101,7 +101,7 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
   }
 
   const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
-  const { version, event, control, accepted_modalities } = validated.value;
+  const { version, event, control, accepted_modalities, resume } = validated.value;
   const taskId = `task_${randomUUID().slice(0, 8)}`;
   const targetText = event.target ? `Target: ${event.target}` : 'No explicit target';
 
@@ -130,7 +130,8 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
     version,
     taskId,
     status: 'running',
-    progressMessage: `Dispatching ${event.type}`
+    progressMessage: `Dispatching ${event.type}`,
+    ...(resume ? { resume } : {})
   });
 
   const paused = createActionResponseEnvelope({
@@ -146,8 +147,22 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
       ? createActionResponseEnvelope({
           version,
           taskId,
-          status: 'running',
-          progressMessage: 'Task resumed by user control'
+          status: 'completed',
+          outcome: 'success',
+          progressMessage: 'Interrupt resolved and task resumed',
+          resume,
+          output: {
+            version,
+            screen: {
+              title: 'Task resumed',
+              subtitle: `event_id=${event.id}`,
+              blocks: [
+                { type: 'text', title: 'Resume target', text: resume?.interrupt_id || resume?.resume_token || 'Resumed task' },
+                { type: 'text', title: 'Thread', text: resume?.thread_id || 'Current thread' },
+                { type: 'notes', title: 'Resume payload', text: resume?.payload ? JSON.stringify(resume.payload) : 'No resume payload provided.' }
+              ]
+            }
+          }
         })
       : control?.signal === 'takeover'
         ? createActionResponseEnvelope({
@@ -166,7 +181,24 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
           })
         : null;
 
-  const terminal = controlTerminal || (event.type === 'auth.required'
+  const interruptTerminal = event.type === 'task.interrupt'
+    ? createActionResponseEnvelope({
+        version,
+        taskId,
+        status: 'completed',
+        outcome: 'interrupt',
+        progressMessage: 'Task interrupted and waiting for a resume event',
+        interrupt: {
+          id: `interrupt_${event.id}`,
+          reason: typeof event.payload === 'object' && event.payload && 'reason' in (event.payload as Record<string, unknown>)
+            ? String((event.payload as Record<string, unknown>).reason || 'manual_interrupt')
+            : 'manual_interrupt',
+          payload: event.payload
+        }
+      })
+    : null;
+
+  const terminal = controlTerminal || interruptTerminal || (event.type === 'auth.required'
     ? createActionResponseEnvelope({
         version,
         taskId,
@@ -185,6 +217,7 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
         version,
         taskId,
         status: 'completed',
+        outcome: 'success',
         progressMessage: 'Action execution completed',
         output: {
           version,
@@ -203,7 +236,7 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
               {
                 type: 'card',
                 title: 'Human controls',
-                text: 'Use pause, resume, or takeover controls for sensitive tasks.'
+                text: 'Use pause, resume, interrupt, or takeover controls for sensitive tasks.'
               }
             ]
           }

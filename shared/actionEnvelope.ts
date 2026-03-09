@@ -17,6 +17,19 @@ export type A2UIHumanControl = {
   takeover_reason?: string;
 };
 
+export type A2UIResumeContext = {
+  thread_id?: string;
+  interrupt_id?: string;
+  resume_token?: string;
+  payload?: JsonValue;
+};
+
+export type A2UIInterruptPayload = {
+  id: string;
+  reason: string;
+  payload?: JsonValue;
+};
+
 export type A2UIActionEvent = {
   id: string;
   type: string;
@@ -35,9 +48,11 @@ export type A2UIActionRequestEnvelope = {
   event: A2UIActionEvent;
   control?: A2UIHumanControl;
   accepted_modalities?: A2UIModality[];
+  resume?: A2UIResumeContext;
 };
 
 export type A2UITaskStatus = 'queued' | 'running' | 'paused' | 'input_required' | 'completed' | 'failed';
+export type A2UITaskOutcome = 'success' | 'interrupt';
 
 export type A2UIInputRequired = {
   reason: string;
@@ -55,6 +70,7 @@ export type A2UIActionResponseEnvelope = {
   task: {
     id: string;
     status: A2UITaskStatus;
+    outcome?: A2UITaskOutcome;
     progress_message?: string;
     artifact?: A2UICanonicalEnvelope;
     error?: {
@@ -62,6 +78,8 @@ export type A2UIActionResponseEnvelope = {
       message: string;
     };
     input_required?: A2UIInputRequired;
+    interrupt?: A2UIInterruptPayload;
+    resume?: A2UIResumeContext;
   };
   a2ui?: A2UICanonicalEnvelope;
 };
@@ -74,6 +92,39 @@ const asObject = (value: unknown): Record<string, unknown> | null => {
 };
 
 const isIsoLike = (value: string): boolean => /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:/u.test(value);
+
+function normalizeResumeContext(value: unknown): A2UIResumeContext | undefined {
+  const raw = asObject(value);
+  if (!raw) return undefined;
+
+  const threadId = typeof raw.thread_id === 'string' && raw.thread_id.trim() ? raw.thread_id.trim() : undefined;
+  const interruptId = typeof raw.interrupt_id === 'string' && raw.interrupt_id.trim() ? raw.interrupt_id.trim() : undefined;
+  const resumeToken = typeof raw.resume_token === 'string' && raw.resume_token.trim() ? raw.resume_token.trim() : undefined;
+
+  if (!threadId && !interruptId && !resumeToken && raw.payload === undefined) return undefined;
+
+  return {
+    ...(threadId ? { thread_id: threadId } : {}),
+    ...(interruptId ? { interrupt_id: interruptId } : {}),
+    ...(resumeToken ? { resume_token: resumeToken } : {}),
+    ...(raw.payload !== undefined ? { payload: raw.payload as JsonValue } : {})
+  };
+}
+
+function normalizeInterruptPayload(value: unknown): A2UIInterruptPayload | undefined {
+  const raw = asObject(value);
+  if (!raw) return undefined;
+
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : '';
+  const reason = typeof raw.reason === 'string' && raw.reason.trim() ? raw.reason.trim() : '';
+  if (!id || !reason) return undefined;
+
+  return {
+    id,
+    reason,
+    ...(raw.payload !== undefined ? { payload: raw.payload as JsonValue } : {})
+  };
+}
 
 export function validateActionRequestEnvelope(raw: unknown):
   | { ok: true; value: A2UIActionRequestEnvelope }
@@ -131,6 +182,11 @@ export function validateActionRequestEnvelope(raw: unknown):
     )
     : undefined;
 
+  const resume = normalizeResumeContext(root.resume);
+  if (control?.signal === 'resume' && !resume?.interrupt_id && !resume?.resume_token) {
+    return { ok: false, error: 'resume control requires resume.interrupt_id or resume.resume_token' };
+  }
+
   return {
     ok: true,
     value: {
@@ -145,7 +201,8 @@ export function validateActionRequestEnvelope(raw: unknown):
         ...(provenance ? { provenance } : {})
       },
       ...(control ? { control } : {}),
-      ...(acceptedModalities ? { accepted_modalities: acceptedModalities } : {})
+      ...(acceptedModalities ? { accepted_modalities: acceptedModalities } : {}),
+      ...(resume ? { resume } : {})
     }
   };
 }
@@ -162,7 +219,7 @@ const TASK_STATUS_ORDER: Record<A2UITaskStatus, number> = {
 export function validateTaskStatusTransition(previous: A2UITaskStatus | null, next: A2UITaskStatus): boolean {
   if (!previous) return next === 'queued' || next === 'running';
   if (previous === 'completed' || previous === 'failed') return false;
-  if (previous === 'input_required') return next === 'running' || next === 'failed';
+  if (previous === 'input_required') return next === 'running' || next === 'failed' || next === 'completed';
   if (previous === 'running') return next === 'running' || next === 'paused' || next === 'input_required' || next === 'completed' || next === 'failed';
   if (previous === 'paused') return next === 'running' || next === 'failed';
   return TASK_STATUS_ORDER[next] >= TASK_STATUS_ORDER[previous];
@@ -191,6 +248,10 @@ export function validateActionResponseEnvelope(raw: unknown, previousStatus: A2U
   }
 
   const progress = typeof task.progress_message === 'string' && task.progress_message ? task.progress_message : undefined;
+
+  const outcome = typeof task.outcome === 'string' && ['success', 'interrupt'].includes(task.outcome)
+    ? task.outcome as A2UITaskOutcome
+    : undefined;
 
   const maybeInputRequired = asObject(task.input_required);
   const inputRequired = maybeInputRequired
@@ -231,8 +292,17 @@ export function validateActionResponseEnvelope(raw: unknown, previousStatus: A2U
   }
 
   const artifact = task.artifact ? toCanonicalEnvelope(task.artifact) : undefined;
-  if (status === 'completed' && !artifact) {
-    return { ok: false, error: 'completed status requires task.artifact' };
+  const interrupt = normalizeInterruptPayload(task.interrupt);
+  const resume = normalizeResumeContext(task.resume);
+
+  if (status === 'completed') {
+    if (outcome === 'interrupt') {
+      if (!interrupt) {
+        return { ok: false, error: 'completed interrupt outcome requires task.interrupt.id and task.interrupt.reason' };
+      }
+    } else if (!artifact) {
+      return { ok: false, error: 'completed status requires task.artifact unless task.outcome=interrupt' };
+    }
   }
 
   const normalized: A2UIActionResponseEnvelope = {
@@ -242,10 +312,13 @@ export function validateActionResponseEnvelope(raw: unknown, previousStatus: A2U
     task: {
       id: taskId,
       status: status as A2UITaskStatus,
+      ...(outcome ? { outcome } : {}),
       ...(progress ? { progress_message: progress } : {}),
       ...(artifact ? { artifact } : {}),
       ...(error ? { error } : {}),
-      ...(inputRequired ? { input_required: inputRequired } : {})
+      ...(inputRequired ? { input_required: inputRequired } : {}),
+      ...(interrupt ? { interrupt } : {}),
+      ...(resume ? { resume } : {})
     },
     ...(artifact ? { a2ui: artifact } : {})
   };
@@ -257,10 +330,13 @@ export function createActionResponseEnvelope(args: {
   version?: string;
   taskId: string;
   status?: A2UITaskStatus;
+  outcome?: A2UITaskOutcome;
   progressMessage?: string;
   output?: unknown;
   error?: { code: string; message: string };
   inputRequired?: A2UIInputRequired;
+  interrupt?: A2UIInterruptPayload;
+  resume?: A2UIResumeContext;
 }): A2UIActionResponseEnvelope {
   const version = args.version || DEFAULT_VERSION;
   const status = args.status || 'completed';
@@ -273,10 +349,13 @@ export function createActionResponseEnvelope(args: {
     task: {
       id: args.taskId,
       status,
+      ...(args.outcome ? { outcome: args.outcome } : {}),
       ...(args.progressMessage ? { progress_message: args.progressMessage } : {}),
       ...(canonical ? { artifact: canonical } : {}),
       ...(args.error ? { error: args.error } : {}),
-      ...(args.inputRequired ? { input_required: args.inputRequired } : {})
+      ...(args.inputRequired ? { input_required: args.inputRequired } : {}),
+      ...(args.interrupt ? { interrupt: args.interrupt } : {}),
+      ...(args.resume ? { resume: args.resume } : {})
     },
     ...(canonical ? { a2ui: canonical } : {})
   };

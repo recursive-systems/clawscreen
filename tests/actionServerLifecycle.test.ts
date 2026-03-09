@@ -66,3 +66,64 @@ test('auth.required returns input_required with negotiated modality', async () =
   assert.equal(payload.task.status, 'input_required');
   assert.equal(payload.task.input_required.modality, 'oauth_redirect');
 });
+
+test('task.interrupt returns completed interrupt outcome with payload', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: {
+        id: 'evt_interrupt',
+        type: 'task.interrupt',
+        timestamp: new Date().toISOString(),
+        payload: { reason: 'mfa_required', field: 'otp_code' }
+      }
+    })
+  });
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.equal(payload.task.status, 'completed');
+  assert.equal(payload.task.outcome, 'interrupt');
+  assert.equal(payload.task.interrupt.reason, 'mfa_required');
+  assert.deepEqual(payload.task.interrupt.payload, { reason: 'mfa_required', field: 'otp_code' });
+});
+
+test('resume control returns completed success outcome with resume context echoed', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: { id: 'evt_resume', type: 'task.resume', timestamp: new Date().toISOString() },
+      control: { signal: 'resume' },
+      resume: {
+        thread_id: 'thread_123',
+        interrupt_id: 'interrupt_evt_interrupt',
+        payload: { otp_code: '123456' }
+      }
+    })
+  });
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.equal(payload.task.status, 'completed');
+  assert.equal(payload.task.outcome, 'success');
+  assert.equal(payload.task.resume.thread_id, 'thread_123');
+  assert.equal(payload.task.resume.interrupt_id, 'interrupt_evt_interrupt');
+  assert.equal(payload.task.artifact.messages[1].screen.title, 'Task resumed');
+});
+
+test('resume control rejects missing interrupt context', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: { id: 'evt_bad_resume', type: 'task.resume', timestamp: new Date().toISOString() },
+      control: { signal: 'resume' }
+    })
+  });
+  assert.equal(res.status, 400);
+  const payload = await res.json() as any;
+  assert.match(payload.error.message, /resume\.interrupt_id|resume_token/);
+});

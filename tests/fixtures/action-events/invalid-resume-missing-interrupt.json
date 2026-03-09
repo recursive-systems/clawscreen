@@ -1,0 +1,11 @@
+{
+  "version": "0.9",
+  "event": {
+    "id": "evt_resume_invalid",
+    "type": "task.resume",
+    "timestamp": "2026-03-09T15:35:00.000Z"
+  },
+  "control": {
+    "signal": "resume"
+  }
+}

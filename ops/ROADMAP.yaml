@@ -3,6 +3,15 @@ product: ClawScreen
 north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
+  - date: 2026-03-09
+    change: Added INT-009 as P0/ready for unified run-state, interrupt, capability, and trust contract across declarative UI and screenshot/action execution
+    rationale: Latest A2UI/runtime movement and computer-use guidance converged on orchestration correctness over raw schema churn; ClawScreen now needs one typed run contract that validates UI deltas, governs interrupt/resume, advertises capabilities, and tags trusted vs untrusted content before renderer/backend fragmentation sets in.
+  - date: 2026-03-08
+    change: Elevated INT-008 to P0/ready and expanded acceptance for provider-specific computer-use parity
+    rationale: Latest provider guidance converges on screenshot-first turns, batched action execution, tool-version negotiation, and high-impact human confirmation; shipping this adapter now unlocks faster backend portability and safer real-world automation.
+  - date: 2026-03-07
+    change: Elevated interrupt-aware lifecycle and computer-use bridge work into active roadmap
+    rationale: External protocol signals point to convergence on explicit interrupt/resume semantics and screenshot/action harness loops; ClawScreen should align now to reduce integration churn and improve human-control safety.
   - date: 2026-03-06
     change: Completed UI-001 frontend polish pass for dynamic A2UI surfaces
     rationale: Fixed tab keyboard switching IDs, improved status/streaming readability, tightened long-content overflow behavior, and strengthened responsive/focus affordances without changing generation functionality.
@@ -161,6 +170,71 @@ backlog:
       - Persist profile definitions and current active tab locally
       - Support manual refresh and optional auto-refresh cadence per profile
       - Maintain compatibility with existing generation flow and quality gates
+
+  - id: INT-007
+    lane: interaction
+    title: Interrupt/resume lifecycle parity (AG-UI draft compatible)
+    priority: P0
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-09
+    acceptance:
+      - Extend run-finished envelope to support outcome: success|interrupt with structured interrupt payload (id/reason/payload)
+      - Add resume envelope support (thread-bound resume with interruptId and payload)
+      - Preserve backwards compatibility for existing completed/failed/input_required signaling
+      - Validator + fixtures + tests for interrupt/resume happy-path and invalid-resume handling
+
+  - id: INT-008
+    lane: interaction
+    title: Screenshot/action harness adapter for computer-use backends
+    priority: P0
+    status: ready
+    last_updated: 2026-03-08
+    acceptance:
+      - Normalize screenshot-request and batched UI action execution loop across supported providers
+      - Support screenshot-first turns and deterministic replay of action arrays before next capture
+      - Add tool-version/capability negotiation (including optional actions like zoom) with explicit downgrade behavior
+      - Add coordinate-space remap utility for downscaled screenshots with deterministic click mapping
+      - Expose harness safety policy (allowed domains/actions, human confirmation checkpoints)
+      - Compatibility tests for click/type/scroll/wait/screenshot loops and terminal-state detection
+
+  - id: INT-009
+    lane: interaction
+    title: Unified run-state, interrupt, capability, and trust contract
+    priority: P0
+    status: ready
+    last_updated: 2026-03-09
+    acceptance:
+      - Define one normalized run event model covering run_started, status_delta, input_required, interrupted, resumed, completed, errored, and handoff_requested
+      - Tag every event and UI payload with source metadata plus trusted|untrusted classification before render
+      - Route declarative UI updates and screenshot/action execution through the same run timeline and replay log
+      - Reject unvalidated or unsupported component deltas via schema validation, allowlist checks, and surface-ownership guards
+      - Advertise renderer/backend capabilities for components, modalities, interrupts, screenshot support, and payload limits with explicit downgrade behavior
+      - Preserve compatibility with current A2UI/AG-UI adapter work and add fixtures/tests for interrupt-resume, trust tagging, and capability-gated execution
+
+  - id: TRUST-003
+    lane: trust_ux
+    title: Prompt-injection and high-impact action confirmation rail
+    priority: P1
+    status: ready
+    last_updated: 2026-03-07
+    acceptance:
+      - Flag untrusted on-screen instructions distinctly from user-authored intent
+      - Require explicit user confirmation for high-impact actions (submit/purchase/delete/auth)
+      - Log confirmation decisions and interruption reasons in task timeline
+      - Add safety-copy guidance in UI when model encounters conflicting page instructions
+
+  - id: REL-002
+    lane: reliability
+    title: Streaming/subscription continuity for long-running remote tasks
+    priority: P2
+    status: todo
+    last_updated: 2026-03-07
+    acceptance:
+      - Support resumable task subscription for non-terminal tasks across reconnects
+      - Add bounded history replay for latest task events/messages
+      - Emit deterministic unsupported-operation behavior when subscribing to terminal tasks
+      - Validate against long-running and intermittent-network test fixtures
 
 quality_gates:
   - npm test

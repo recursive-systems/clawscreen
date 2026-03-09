@@ -55,6 +55,45 @@ test('request envelope supports provenance/control/modality negotiation fields',
   }
 });
 
+test('resume control requires interrupt context for thread-bound resume', () => {
+  const parsed = validateActionRequestEnvelope({
+    version: '0.9',
+    event: {
+      id: 'evt_resume',
+      type: 'task.resume',
+      timestamp: new Date().toISOString()
+    },
+    control: { signal: 'resume' }
+  });
+  assert.equal(parsed.ok, false);
+  if (!parsed.ok) {
+    assert.match(parsed.error, /resume\.interrupt_id|resume_token/);
+  }
+});
+
+test('resume control accepts interrupt id, thread id, and payload', () => {
+  const parsed = validateActionRequestEnvelope({
+    version: '0.9',
+    event: {
+      id: 'evt_resume',
+      type: 'task.resume',
+      timestamp: new Date().toISOString()
+    },
+    control: { signal: 'resume' },
+    resume: {
+      thread_id: 'thread_123',
+      interrupt_id: 'interrupt_123',
+      payload: { approval: 'granted' }
+    }
+  });
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.equal(parsed.value.resume?.thread_id, 'thread_123');
+    assert.equal(parsed.value.resume?.interrupt_id, 'interrupt_123');
+    assert.deepEqual(parsed.value.resume?.payload, { approval: 'granted' });
+  }
+});
+
 test('invalid action request fixture is rejected with required-field error', () => {
   const parsed = validateActionRequestEnvelope(fixture('invalid-missing-event-id.json'));
   assert.equal(parsed.ok, false);
@@ -85,6 +124,48 @@ test('action response envelope canonicalizes output and stays compatible with ge
   assert.equal(compatibility.screen?.title, 'Action Applied');
 });
 
+test('completed envelopes support interrupt outcome and structured payload', () => {
+  const interrupted = validateActionResponseEnvelope({
+    ok: true,
+    version: '0.9',
+    task_id: 'task_interrupt',
+    task: {
+      id: 'task_interrupt',
+      status: 'completed',
+      outcome: 'interrupt',
+      progress_message: 'Waiting for resume',
+      interrupt: {
+        id: 'interrupt_42',
+        reason: 'mfa_required',
+        payload: { step: 'otp' }
+      }
+    }
+  }, 'running');
+  assert.equal(interrupted.ok, true);
+  if (interrupted.ok) {
+    assert.equal(interrupted.value.task.outcome, 'interrupt');
+    assert.equal(interrupted.value.task.interrupt?.id, 'interrupt_42');
+    assert.deepEqual(interrupted.value.task.interrupt?.payload, { step: 'otp' });
+  }
+});
+
+test('completed interrupt outcome rejects missing interrupt metadata', () => {
+  const interrupted = validateActionResponseEnvelope({
+    ok: true,
+    version: '0.9',
+    task_id: 'task_interrupt',
+    task: {
+      id: 'task_interrupt',
+      status: 'completed',
+      outcome: 'interrupt'
+    }
+  }, 'running');
+  assert.equal(interrupted.ok, false);
+  if (!interrupted.ok) {
+    assert.match(interrupted.error, /task\.interrupt/);
+  }
+});
+
 test('task lifecycle transitions enforce queued/running/paused/input_required/completed rules', () => {
   assert.equal(validateTaskStatusTransition(null, 'queued'), true);
   assert.equal(validateTaskStatusTransition('queued', 'running'), true);
@@ -94,6 +175,7 @@ test('task lifecycle transitions enforce queued/running/paused/input_required/co
   assert.equal(validateTaskStatusTransition('paused', 'completed'), false);
   assert.equal(validateTaskStatusTransition('running', 'input_required'), true);
   assert.equal(validateTaskStatusTransition('input_required', 'running'), true);
+  assert.equal(validateTaskStatusTransition('input_required', 'completed'), true);
   assert.equal(validateTaskStatusTransition('running', 'completed'), true);
   assert.equal(validateTaskStatusTransition('completed', 'running'), false);
   assert.equal(validateTaskStatusTransition('queued', 'completed'), true);
