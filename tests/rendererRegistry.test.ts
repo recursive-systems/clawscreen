@@ -74,10 +74,15 @@ test('renderNode supports interactive foundation components for slice A', () => 
   assert.match(choice, /type-choicepicker/);
   assert.match(choice, /choice-item/);
   assert.match(choice, /is-selected/);
+  assert.match(choice, /role="radio"/);
   assert.match(datetime, /datetime-local/);
+  assert.match(datetime, /data-a2ui-type="datetimeinput"/);
   assert.match(textField, /<textarea/);
+  assert.match(textField, /data-a2ui-type="textfield"/);
   assert.match(actionButton, /ui-button destructive/);
-  assert.match(actionButton, /data-action=/);
+  assert.match(actionButton, /data-a2ui-action=/);
+  assert.match(actionButton, /data-action-type="delete"/);
+  assert.match(actionButton, /data-action-target="item-1"/);
   assert.match(tabs, /type-tabs/);
   assert.match(tabs, /tab-pill/);
   assert.match(slider, /type-slider/);
@@ -86,6 +91,49 @@ test('renderNode supports interactive foundation components for slice A', () => 
   assert.match(checkbox, /type="checkbox"/);
   assert.match(modal, /type-modal/);
   assert.match(modal, /modal-actions/);
+});
+
+test('renderNode uses bindings and validation semantics for textfield/datetime/choicepicker', () => {
+  const model = {
+    note_text: 'bound note',
+    due_on: '2026-03-09',
+    schedule_at: '2026-03-09T12:30',
+    picks: ['A', 'C']
+  };
+  const shortText = renderNode({
+    type: 'textfield',
+    bind: 'due_on',
+    variant: 'date-like',
+    validationState: 'error',
+    validationMessage: 'Date is required',
+    placeholder: 'YYYY-MM-DD'
+  }, model);
+  const longText = renderNode({
+    type: 'textfield',
+    bind: 'note_text',
+    variant: 'long'
+  }, model);
+  const datetime = renderNode({
+    type: 'datetimeinput',
+    bind: 'schedule_at',
+    validationState: 'valid'
+  }, model);
+  const multiChoice = renderNode({
+    type: 'choicepicker',
+    bind: 'picks',
+    multiple: true,
+    items: ['A', 'B', 'C']
+  }, model);
+
+  assert.match(shortText, /type="date"/);
+  assert.match(shortText, /value="2026-03-09"/);
+  assert.match(shortText, /aria-invalid="true"/);
+  assert.match(longText, /bound note/);
+  assert.match(datetime, /value="2026-03-09T12:30"/);
+  assert.match(datetime, /is-valid/);
+  assert.match(multiChoice, /role="checkbox"/);
+  assert.match(multiChoice, /data-multi="true"/);
+  assert.match(multiChoice, /is-selected/);
 });
 
 test('renderNode humanizes technical source errors for non-technical UX', () => {

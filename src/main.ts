@@ -4,6 +4,7 @@ import {
   A2UICanonicalEnvelope,
   A2UICompatiblePayload,
   A2UIRenderState,
+  JsonValue,
   createInitialRenderState
 } from '../shared/a2ui';
 import { renderNode } from './render/registry';
@@ -12,6 +13,7 @@ import { unwrapA2uiPayload } from './protocol/unwrapPayload';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
+const A2UI_ACTION_ENDPOINT_CANDIDATES = ['/a2ui/action', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/action`];
 const REQUEST_TIMEOUT_MS = 130_000;
 const MAX_RETRIES = 2;
 const MAX_PROMPT_LENGTH = 1200;
@@ -29,7 +31,6 @@ type ScreenProfile = {
 };
 
 type Primitive = string | number | boolean | null | undefined;
-type Json = Primitive | Json[] | { [key: string]: Json };
 
 type RunSummary = {
   runId: string;
@@ -94,6 +95,7 @@ const state: {
   activeProfileId: string;
   autoRefreshTimer: number | null;
   isSubmitting: boolean;
+  isActionSubmitting: boolean;
   runSummary: RunSummary | null;
 } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
@@ -104,6 +106,7 @@ const state: {
   activeProfileId: '',
   autoRefreshTimer: null,
   isSubmitting: false,
+  isActionSubmitting: false,
   runSummary: null
 };
 
@@ -438,6 +441,20 @@ function updateActiveProfile(updater: (profile: ScreenProfile) => ScreenProfile)
   persistProfiles();
 }
 
+function persistCurrentRenderModel() {
+  if (!state.lastPayload) return;
+  const nextPayload = {
+    ...state.lastPayload,
+    model: { ...(state.renderState?.model || {}) }
+  } as A2UICompatiblePayload;
+  state.lastPayload = nextPayload;
+  updateActiveProfile((profile) => ({
+    ...profile,
+    lastPayload: nextPayload,
+    updatedAt: nowIso()
+  }));
+}
+
 function renderProfileTabs() {
   const renderInto = (container: HTMLElement, baseClass: string) => {
     container.innerHTML = '';
@@ -574,6 +591,16 @@ function parseJsonLines(text: string): unknown[] | null {
   return objects.length ? objects : null;
 }
 
+function sanitizeActionEventType(value: unknown): string {
+  const type = String(value || '').trim().slice(0, 120);
+  return type || 'button.click';
+}
+
+function sanitizeActionTarget(value: unknown): string | undefined {
+  const target = String(value || '').trim().slice(0, 200);
+  return target || undefined;
+}
+
 function normalizeA2uiPayload(
   raw: unknown,
   previousState?: A2UIRenderState
@@ -702,6 +729,24 @@ async function requestA2ui(prompt: string, endpoint: string): Promise<unknown> {
   return res.text();
 }
 
+async function requestA2uiAction(body: Record<string, unknown>, endpoint: string): Promise<unknown> {
+  const res = await withTimeout(REQUEST_TIMEOUT_MS, fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain' },
+    body: JSON.stringify(body)
+  }));
+
+  const contentType = res.headers.get('content-type') || '';
+  const parsed = contentType.includes('application/json') ? await res.json() : await res.text();
+  if (!res.ok) {
+    const message = typeof parsed === 'object' && parsed && 'error' in parsed
+      ? String((parsed as { error?: { message?: string } }).error?.message || `Action failed with ${res.status}`)
+      : `Action failed with ${res.status}`;
+    throw new Error(message);
+  }
+  return parsed;
+}
+
 async function generateA2ui(prompt: string, callbacks?: StreamCallbacks): Promise<unknown> {
   const failures: string[] = [];
   for (const endpoint of A2UI_ENDPOINT_CANDIDATES) {
@@ -714,6 +759,18 @@ async function generateA2ui(prompt: string, callbacks?: StreamCallbacks): Promis
       } catch (err) {
         failures.push(`${endpoint} attempt ${attempt}: ${(err as Error).message}`);
       }
+    }
+  }
+  throw new Error(failures.join(' | '));
+}
+
+async function dispatchA2uiAction(body: Record<string, unknown>): Promise<unknown> {
+  const failures: string[] = [];
+  for (const endpoint of A2UI_ACTION_ENDPOINT_CANDIDATES) {
+    try {
+      return await requestA2uiAction(body, endpoint);
+    } catch (err) {
+      failures.push(`${endpoint}: ${(err as Error).message}`);
     }
   }
   throw new Error(failures.join(' | '));
@@ -762,7 +819,7 @@ function syncRenderSurface(nodesToRender: unknown[]) {
   const existing = Array.from(els.renderSurface.children) as HTMLElement[];
 
   nodesToRender.forEach((node, index) => {
-    const html = renderNode(node);
+    const html = renderNode(node, state.renderState.model);
     const current = existing[index];
     const sizeClass = getNodeSizeClass(node);
 
@@ -855,6 +912,11 @@ function setBusyControls(isBusy: boolean) {
   renderProfileTabs();
 }
 
+function rerenderFromCurrentState(source = 'local-binding') {
+  if (!state.lastPayload || !isSafePayload(state.lastPayload)) return;
+  renderA2ui(state.lastPayload, source);
+}
+
 async function submitPrompt(prompt: string, source = 'prompt') {
   if (state.isSubmitting) return;
 
@@ -934,6 +996,108 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 function wire() {
   els.profileTabs.addEventListener('keydown', handleProfileTabsKeydown);
   els.profileManagerTabs.addEventListener('keydown', handleProfileTabsKeydown);
+
+  const updateBoundValue = (binding: string, value: unknown) => {
+    if (!binding) return;
+    state.renderState.model = {
+      ...state.renderState.model,
+      [binding]: value as JsonValue
+    } as Record<string, JsonValue>;
+    persistCurrentRenderModel();
+  };
+
+  els.renderSurface.addEventListener('input', (event) => {
+    const target = event.target as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!target) return;
+    const binding = target.dataset.bind;
+    if (!binding) return;
+    if (target instanceof HTMLInputElement && target.type === 'checkbox') {
+      updateBoundValue(binding, target.checked);
+      return;
+    }
+    updateBoundValue(binding, target.value);
+  });
+
+  els.renderSurface.addEventListener('click', async (event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+
+    const choice = target.closest('.choice-item') as HTMLButtonElement | null;
+    if (choice) {
+      const binding = choice.dataset.bind || '';
+      const value = choice.dataset.choiceValue || '';
+      const multi = choice.dataset.multi === 'true';
+      const current = state.renderState.model[binding];
+      if (multi) {
+        const list = Array.isArray(current) ? [...current] : [];
+        const index = list.findIndex((item) => String(item).toLowerCase() === value.toLowerCase());
+        if (index >= 0) list.splice(index, 1); else list.push(value);
+        updateBoundValue(binding, list);
+      } else {
+        updateBoundValue(binding, value);
+      }
+      rerenderFromCurrentState('local-binding');
+      return;
+    }
+
+    const actionButton = target.closest('.ui-button[data-a2ui-action]') as HTMLButtonElement | null;
+    if (actionButton && !actionButton.disabled && !state.isActionSubmitting) {
+      let actionPayload: Record<string, unknown> = {};
+      try {
+        actionPayload = actionButton.dataset.a2uiAction ? JSON.parse(actionButton.dataset.a2uiAction) as Record<string, unknown> : {};
+      } catch {
+        setUiState('error', 'Action payload is invalid and was blocked for safety.');
+        return;
+      }
+
+      const previousLabel = actionButton.textContent || 'Run';
+      const loadingLabel = actionButton.getAttribute('aria-busy') === 'true' ? previousLabel : 'Working…';
+      state.isActionSubmitting = true;
+      actionButton.disabled = true;
+      actionButton.setAttribute('aria-busy', 'true');
+      actionButton.textContent = loadingLabel;
+      setUiState('thinking', 'Running action…');
+
+      const eventType = sanitizeActionEventType(actionButton.dataset.actionType || actionPayload.type || actionPayload.kind);
+      const eventTarget = sanitizeActionTarget(actionButton.dataset.actionTarget || actionPayload.target);
+      const eventId = `evt_ui_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        const response = await dispatchA2uiAction({
+          version: state.renderState.version || '0.9',
+          event: {
+            id: eventId,
+            type: eventType,
+            timestamp: nowIso(),
+            ...(eventTarget ? { target: eventTarget } : {}),
+            payload: actionPayload,
+            snapshot: {
+              screen: (state.renderState.screen || {}) as unknown,
+              model: state.renderState.model as unknown
+            },
+            provenance: {
+              origin: 'user',
+              tool: 'clawscreen.ui',
+              timestamp: nowIso()
+            }
+          }
+        });
+
+        const responseSummary = extractRunSummary(response);
+        if (responseSummary) state.runSummary = responseSummary;
+
+        const actionArtifact = unwrapA2uiPayload(response);
+        renderA2ui(actionArtifact, 'action');
+      } catch (err) {
+        setUiState('error', `Action could not be completed: ${(err as Error).message}`);
+      } finally {
+        state.isActionSubmitting = false;
+        actionButton.disabled = false;
+        actionButton.removeAttribute('aria-busy');
+        actionButton.textContent = previousLabel;
+      }
+    }
+  });
 
   els.renderSurface.addEventListener('click', (event) => {
     const card = (event.target as HTMLElement | null)?.closest('.scene-card') as HTMLElement | null;

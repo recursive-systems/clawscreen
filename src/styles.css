@@ -644,11 +644,26 @@ a:focus-visible,
   background: var(--bg-surface);
 }
 
+.ui-input.is-invalid {
+  border-color: color-mix(in srgb, var(--error) 60%, var(--line-strong));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--error) 45%, transparent);
+}
+
+.ui-input.is-valid {
+  border-color: color-mix(in srgb, var(--ok) 55%, var(--line-strong));
+}
+
 .ui-button {
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   padding: 0.55rem 0.9rem;
   font-weight: 600;
+}
+
+.ui-button.is-loading,
+.ui-button[aria-busy="true"] {
+  opacity: 0.72;
+  cursor: progress;
 }
 
 .ui-button.primary {

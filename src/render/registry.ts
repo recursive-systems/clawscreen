@@ -103,6 +103,13 @@ function sanitizeVariant(value: unknown, allowed: string[], fallback: string): s
   return allowed.includes(v) ? v : fallback;
 }
 
+function sanitizeValidationState(value: unknown): 'none' | 'valid' | 'invalid' {
+  const normalized = normalizeText(value).toLowerCase();
+  if (normalized === 'valid' || normalized === 'success') return 'valid';
+  if (normalized === 'invalid' || normalized === 'error') return 'invalid';
+  return 'none';
+}
+
 function sanitizeActionPayload(payload: unknown): string {
   if (!payload || typeof payload !== 'object') return '{}';
   try {
@@ -117,6 +124,29 @@ function sanitizeActionPayload(payload: unknown): string {
   } catch {
     return '{}';
   }
+}
+
+function getModel(node: A2UIBlock): Record<string, unknown> {
+  return ((node as Record<string, unknown>).__model as Record<string, unknown>) || {};
+}
+
+function getBindingKey(node: A2UIBlock): string {
+  return sanitizeInputValue((node as Record<string, unknown>).bind || (node as Record<string, unknown>).modelKey || (node as Record<string, unknown>).name || '', 120);
+}
+
+function getBoundValue(node: A2UIBlock, fallback: unknown): unknown {
+  const binding = getBindingKey(node);
+  if (!binding) return fallback;
+  const model = getModel(node);
+  return model[binding] ?? fallback;
+}
+
+function toBoundStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => sanitizeInputValue(entry, 120))
+    .filter(Boolean)
+    .slice(0, 50);
 }
 
 function renderKeyValueTable(obj: Record<string, unknown>): string {
@@ -134,7 +164,7 @@ function renderGenericSection(node: A2UIBlock, typeClass: string): string {
   const primaryText = node.text || node.body || node.content || node.value;
   const children = normalizeChildren(node);
   const details = Object.fromEntries(Object.entries(node).filter(([k]) => !RESERVED_KEYS.has(k)));
-  const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+  const childHtml = children.map((child) => `<div class="node-child">${renderNode(child, getModel(node))}</div>`).join('');
   const bodyHtml = primaryText ? `<p>${renderPrimitive(primaryText)}</p>` : '';
   const detailsHtml = Object.keys(details).length ? renderKeyValueTable(details) : '';
   return `<section class="generic-block ${typeClass}">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${bodyHtml}${childHtml}${detailsHtml}</section>`;
@@ -178,61 +208,76 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
   },
   row: (node) => {
     const children = normalizeChildren(node);
-    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child, getModel(node))}</div>`).join('');
     return `<section class="generic-block type-row">${childHtml}</section>`;
   },
   column: (node) => {
     const children = normalizeChildren(node);
-    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child, getModel(node))}</div>`).join('');
     return `<section class="generic-block type-column">${childHtml}</section>`;
   },
   section: (node) => {
     const title = node.title || node.label || null;
     const body = normalizeText(node.body || node.text || node.content || node.value);
     const children = normalizeChildren(node);
-    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child)}</div>`).join('');
+    const childHtml = children.map((child) => `<div class="node-child">${renderNode(child, getModel(node))}</div>`).join('');
     return `<section class="generic-block type-section">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}${body ? `<p>${escapeHtml(body)}</p>` : ''}${childHtml}</section>`;
   },
   choicepicker: (node) => {
     const title = normalizeText(node.title || node.label || 'Choose one');
     const items = asArray(node.items || node.options || node.choices || node.values);
-    const selected = sanitizeInputValue(node.selected || node.value || '', 100).toLowerCase();
+    const binding = getBindingKey(node);
+    const isMultiple = Boolean(node.multiple || node.multi || sanitizeVariant(node.selectionMode, ['single','multiple'], 'single') === 'multiple');
+    const selectedRaw = getBoundValue(node, node.selected || node.value || (isMultiple ? [] : ''));
+    const selectedList = isMultiple
+      ? toBoundStringArray(selectedRaw).map((v) => v.toLowerCase())
+      : [sanitizeInputValue(selectedRaw, 100).toLowerCase()].filter(Boolean);
     const optionsHtml = items.map((item, idx) => {
       const label = typeof item === 'string' ? item : sanitizeInputValue((item as Record<string, unknown>)?.label || (item as Record<string, unknown>)?.title || item, 120);
       const normalized = label.toLowerCase();
-      const active = selected && selected === normalized;
-      return `<button type="button" class="choice-item${active ? ' is-selected' : ''}" aria-pressed="${active ? 'true' : 'false'}" data-choice-index="${idx}">${escapeHtml(label || `Option ${idx + 1}`)}</button>`;
+      const active = selectedList.includes(normalized);
+      const role = isMultiple ? 'checkbox' : 'radio';
+      return `<button type="button" class="choice-item${active ? ' is-selected' : ''}" aria-pressed="${active ? 'true' : 'false'}" role="${role}" data-choice-index="${idx}" data-choice-value="${escapeHtml(label || `Option ${idx + 1}`)}" ${binding ? `data-bind="${escapeHtml(binding)}"` : ''} data-multi="${isMultiple ? 'true' : 'false'}">${escapeHtml(label || `Option ${idx + 1}`)}</button>`;
     }).join('');
-    return `<section class="generic-block type-choicepicker">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<div class="choice-grid">${optionsHtml || '<p class="muted">No options</p>'}</div></section>`;
+    return `<section class="generic-block type-choicepicker">${title ? `<h3>${escapeHtml(title)}</h3>` : ''}<div class="choice-grid" role="${isMultiple ? 'group' : 'radiogroup'}">${optionsHtml || '<p class="muted">No options</p>'}</div></section>`;
   },
   datetimeinput: (node) => {
     const title = normalizeText(node.title || node.label || 'Choose date and time');
-    const value = sanitizeInputValue(node.value || node.defaultValue || '', 40);
+    const binding = getBindingKey(node);
+    const value = sanitizeInputValue(getBoundValue(node, node.value || node.defaultValue || ''), 40);
     const min = sanitizeInputValue(node.min || '', 40);
     const max = sanitizeInputValue(node.max || '', 40);
     const hint = normalizeText(node.hint || node.helperText || node.description || '');
-    return `<section class="generic-block type-datetime"><h3>${escapeHtml(title)}</h3><input class="ui-input" type="datetime-local" value="${escapeHtml(value)}" ${min ? `min="${escapeHtml(min)}"` : ''} ${max ? `max="${escapeHtml(max)}"` : ''} />${hint ? `<p class="muted">${escapeHtml(hint)}</p>` : ''}</section>`;
+    const validation = normalizeText(node.validationMessage || node.validation || node.error || '');
+    const validationState = sanitizeValidationState((node as Record<string, unknown>).validationState || (node as Record<string, unknown>).state || (validation ? 'invalid' : 'none'));
+    return `<section class="generic-block type-datetime"><h3>${escapeHtml(title)}</h3><input class="ui-input${validationState === 'invalid' ? ' is-invalid' : validationState === 'valid' ? ' is-valid' : ''}" data-a2ui-type="datetimeinput" ${binding ? `data-bind="${escapeHtml(binding)}"` : ''} type="datetime-local" value="${escapeHtml(value)}" ${min ? `min="${escapeHtml(min)}"` : ''} ${max ? `max="${escapeHtml(max)}"` : ''} ${validationState === 'invalid' ? 'aria-invalid="true"' : ''} />${(validation || hint) ? `<p class="muted">${escapeHtml(validation || hint)}</p>` : ''}</section>`;
   },
   textfield: (node) => {
     const title = normalizeText(node.title || node.label || 'Input');
     const variant = sanitizeVariant(node.variant || node.format, ['short', 'long', 'date-like'], 'short');
-    const value = sanitizeInputValue(node.value || node.defaultValue || '', variant === 'long' ? 500 : 160);
+    const binding = getBindingKey(node);
+    const value = sanitizeInputValue(getBoundValue(node, node.value || node.defaultValue || ''), variant === 'long' ? 500 : 160);
     const placeholder = sanitizeInputValue(node.placeholder || '', 120);
     const required = Boolean(node.required);
     const validation = normalizeText(node.validationMessage || node.validation || node.error || '');
+    const validationState = sanitizeValidationState((node as Record<string, unknown>).validationState || (node as Record<string, unknown>).state || (validation ? 'invalid' : 'none'));
     if (variant === 'long') {
-      return `<section class="generic-block type-textfield"><h3>${escapeHtml(title)}</h3><textarea class="ui-input" rows="4" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''}>${escapeHtml(value)}</textarea>${validation ? `<p class="muted">${escapeHtml(validation)}</p>` : ''}</section>`;
+      return `<section class="generic-block type-textfield"><h3>${escapeHtml(title)}</h3><textarea class="ui-input${validationState === 'invalid' ? ' is-invalid' : validationState === 'valid' ? ' is-valid' : ''}" data-a2ui-type="textfield" data-variant="${variant}" ${binding ? `data-bind="${escapeHtml(binding)}"` : ''} rows="4" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''} ${validationState === 'invalid' ? 'aria-invalid="true"' : ''}>${escapeHtml(value)}</textarea>${validation ? `<p class="muted">${escapeHtml(validation)}</p>` : ''}</section>`;
     }
     const inputType = variant === 'date-like' ? 'date' : 'text';
-    return `<section class="generic-block type-textfield"><h3>${escapeHtml(title)}</h3><input class="ui-input" type="${inputType}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''} />${validation ? `<p class="muted">${escapeHtml(validation)}</p>` : ''}</section>`;
+    return `<section class="generic-block type-textfield"><h3>${escapeHtml(title)}</h3><input class="ui-input${validationState === 'invalid' ? ' is-invalid' : validationState === 'valid' ? ' is-valid' : ''}" data-a2ui-type="textfield" data-variant="${variant}" ${binding ? `data-bind="${escapeHtml(binding)}"` : ''} type="${inputType}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''} ${validationState === 'invalid' ? 'aria-invalid="true"' : ''} />${validation ? `<p class="muted">${escapeHtml(validation)}</p>` : ''}</section>`;
   },
   button: (node) => {
     const label = normalizeText(node.label || node.title || node.text || 'Continue');
     const variant = sanitizeVariant(node.variant || node.style, ['primary', 'secondary', 'destructive'], 'primary');
     const loading = Boolean(node.loading);
     const disabled = Boolean(node.disabled) || loading;
-    const actionPayload = sanitizeActionPayload(node.action || node.payload || null);
-    return `<section class="generic-block type-button"><button type="button" class="ui-button ${variant}" data-action='${escapeHtml(actionPayload)}' ${disabled ? 'disabled' : ''}>${loading ? 'Working…' : escapeHtml(label)}</button></section>`;
+    const loadingLabel = normalizeText((node as Record<string, unknown>).loadingLabel || '') || 'Working…';
+    const actionPayload = sanitizeActionPayload(node.action || node.payload || { type: 'button.click', label });
+    const action = (node.action && typeof node.action === 'object') ? node.action as Record<string, unknown> : {};
+    const actionType = sanitizeInputValue(action.type || action.kind || 'button.click', 120);
+    const actionTarget = sanitizeInputValue(action.target || action.id || node.id || node.name || '', 120);
+    return `<section class="generic-block type-button"><button type="button" class="ui-button ${variant}${loading ? ' is-loading' : ''}" data-a2ui-action='${escapeHtml(actionPayload)}' data-action-type="${escapeHtml(actionType)}" ${actionTarget ? `data-action-target="${escapeHtml(actionTarget)}"` : ''} ${disabled ? 'disabled aria-disabled="true"' : ''} ${loading ? 'aria-busy="true"' : ''}>${escapeHtml(loading ? loadingLabel : label)}</button></section>`;
   },
   tabs: (node) => {
     const title = normalizeText(node.title || node.label || 'Sections');
@@ -254,16 +299,19 @@ export const trustedComponentRegistry: Record<TrustedComponentType, BlockRendere
     const min = Number.isFinite(minRaw) ? minRaw : 0;
     const max = Number.isFinite(maxRaw) ? maxRaw : 100;
     const valueRaw = Number(node.value ?? min);
-    const value = Number.isFinite(valueRaw) ? Math.min(Math.max(valueRaw, min), max) : min;
+    const binding = getBindingKey(node);
+    const boundSlider = Number(getBoundValue(node, valueRaw));
+    const value = Number.isFinite(boundSlider) ? Math.min(Math.max(boundSlider, min), max) : min;
     const stepRaw = Number(node.step ?? 1);
     const step = Number.isFinite(stepRaw) && stepRaw > 0 ? stepRaw : 1;
-    return `<section class="generic-block type-slider"><h3>${escapeHtml(title)}</h3><input class="ui-slider" type="range" min="${min}" max="${max}" step="${step}" value="${value}" /><p class="muted">Current value: ${escapeHtml(value)}</p></section>`;
+    return `<section class="generic-block type-slider"><h3>${escapeHtml(title)}</h3><input class="ui-slider" data-bind="${escapeHtml(binding)}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" /><p class="muted">Current value: ${escapeHtml(value)}</p></section>`;
   },
   checkbox: (node) => {
     const label = normalizeText(node.label || node.title || 'Enable');
-    const checked = Boolean(node.checked ?? node.value);
+    const binding = getBindingKey(node);
+    const checked = Boolean(getBoundValue(node, node.checked ?? node.value));
     const hint = normalizeText(node.hint || node.helperText || '');
-    return `<section class="generic-block type-checkbox"><label class="ui-checkbox"><input type="checkbox" ${checked ? 'checked' : ''} /><span>${escapeHtml(label)}</span></label>${hint ? `<p class="muted">${escapeHtml(hint)}</p>` : ''}</section>`;
+    return `<section class="generic-block type-checkbox"><label class="ui-checkbox"><input data-bind="${escapeHtml(binding)}" type="checkbox" ${checked ? 'checked' : ''} /><span>${escapeHtml(label)}</span></label>${hint ? `<p class="muted">${escapeHtml(hint)}</p>` : ''}</section>`;
   },
   modal: (node) => {
     const title = normalizeText(node.title || node.label || 'Confirmation');
@@ -279,11 +327,11 @@ function renderUnsupported(node: A2UIBlock): string {
   return `<section class="generic-block type-unsupported"><p class="muted">Unsupported component type: ${escapeHtml(type || 'unknown')}</p></section>`;
 }
 
-export function renderNode(node: unknown): string {
+export function renderNode(node: unknown, model: Record<string, unknown> = {}): string {
   if (node == null) return '';
   if (['string', 'number', 'boolean'].includes(typeof node)) return `<p>${renderPrimitive(node)}</p>`;
 
-  const block = node as A2UIBlock;
+  const block = { ...(node as A2UIBlock), __model: model } as A2UIBlock;
   const rawType = String(block.type || block.kind || block.component || 'unknown').toLowerCase();
   const trustedType = toTrustedComponentType(rawType);
   if (trustedType === 'unknown') return renderUnsupported(block);
