@@ -178,3 +178,49 @@ test('button action accepts snapshot model and responds with processed artifact'
   assert.equal(payload.task.outcome, 'success');
   assert.equal(payload.task.artifact.messages[1].screen.title, 'Action processed');
 });
+
+test('button action refresh.request returns refresh-specific artifact', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: {
+        id: 'evt_refresh',
+        type: 'button.click',
+        target: '#refresh-now',
+        timestamp: new Date().toISOString(),
+        payload: { type: 'refresh.request', target: 'hud' }
+      }
+    })
+  });
+
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.equal(payload.task.status, 'completed');
+  assert.equal(payload.task.progress_message, 'Queued live refresh');
+  assert.equal(payload.task.artifact.messages[1].screen.title, 'Refresh requested');
+});
+
+test('button action focus.plan returns focused planning artifact', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: {
+        id: 'evt_focus_plan',
+        type: 'button.click',
+        target: '#plan',
+        timestamp: new Date().toISOString(),
+        payload: { type: 'focus.plan', target: 'next_30' }
+      }
+    })
+  });
+
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.equal(payload.task.status, 'completed');
+  assert.equal(payload.task.progress_message, 'Generated focus plan');
+  assert.equal(payload.task.artifact.messages[1].screen.title, '30-minute plan');
+});

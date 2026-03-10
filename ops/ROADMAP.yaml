@@ -3,6 +3,12 @@ product: ClawScreen
 north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
+  - date: 2026-03-10
+    change: Completed INT-010 mixed text + UI normalization with server guardrails, frontend HUD composition, and action-aware artifact responses
+    rationale: ClawScreen now normalizes sparse/mixed model output into a stable glanceable HUD, preserves actionable controls, and degrades safely instead of exposing brittle raw payload structure.
+  - date: 2026-03-10
+    change: Expanded INT-009 and added INT-010/REL-003 to prioritize mixed text+UI run streams, append-only timeline provenance, and deterministic replay tooling
+    rationale: Latest deep research shows ecosystem movement is mostly runtime hardening rather than a fresh spec jump; durable differentiation is now in one governed run model that handles text, UI deltas, interrupts, screenshot/action fallback, and trust metadata in the same observable timeline.
   - date: 2026-03-09
     change: Added INT-009 as P0/ready for unified run-state, interrupt, capability, and trust contract across declarative UI and screenshot/action execution
     rationale: Latest A2UI/runtime movement and computer-use guidance converged on orchestration correctness over raw schema churn; ClawScreen now needs one typed run contract that validates UI deltas, governs interrupt/resume, advertises capabilities, and tags trusted vs untrusted content before renderer/backend fragmentation sets in.
@@ -200,17 +206,42 @@ backlog:
 
   - id: INT-009
     lane: interaction
-    title: Unified run-state, interrupt, capability, and trust contract
+    title: Unified run-state, interrupt, capability, trust, and mixed-stream contract
     priority: P0
     status: ready
-    last_updated: 2026-03-09
+    last_updated: 2026-03-10
     acceptance:
-      - Define one normalized run event model covering run_started, status_delta, input_required, interrupted, resumed, completed, errored, and handoff_requested
-      - Tag every event and UI payload with source metadata plus trusted|untrusted classification before render
-      - Route declarative UI updates and screenshot/action execution through the same run timeline and replay log
+      - Define one normalized run event model covering run_started, status_delta, text_chunk, ui_delta, input_required, interrupted, resumed, action_batch_requested, action_batch_executed, completed, errored, and handoff_requested
+      - Tag every event and UI payload with source metadata, provenance, and trusted|untrusted classification before render
+      - Route conversational text, declarative UI updates, and screenshot/action execution through the same append-only run timeline and replay log
       - Reject unvalidated or unsupported component deltas via schema validation, allowlist checks, and surface-ownership guards
-      - Advertise renderer/backend capabilities for components, modalities, interrupts, screenshot support, and payload limits with explicit downgrade behavior
-      - Preserve compatibility with current A2UI/AG-UI adapter work and add fixtures/tests for interrupt-resume, trust tagging, and capability-gated execution
+      - Advertise renderer/backend capabilities for components, modalities, interrupts, screenshot support, replay support, and payload limits with explicit downgrade behavior
+      - Preserve compatibility with current A2UI/AG-UI adapter work and add fixtures/tests for mixed text+UI streams, interrupt-resume, trust tagging, provenance display, and capability-gated execution
+
+  - id: INT-010
+    lane: interaction
+    title: Mixed text + UI parser and stream normalization
+    priority: P1
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-10
+    acceptance:
+      - Parse and normalize runs that interleave narrative text with embedded A2UI or equivalent structured UI payloads
+      - Support XML-style or fenced payload delimiters without duplicating parser logic across transports
+      - Preserve ordering so text chunks and ui_deltas replay identically in timeline views
+      - Add fixtures/tests for mixed-stream happy path, malformed payload isolation, and downgrade-to-text behavior
+
+  - id: REL-003
+    lane: reliability
+    title: Deterministic run replay and timeline inspector
+    priority: P2
+    status: ready
+    last_updated: 2026-03-10
+    acceptance:
+      - Reconstruct visible run state deterministically from append-only event history
+      - Inspect text, UI deltas, interrupts, approvals, screenshot/action steps, and terminal outcomes in one timeline view
+      - Surface provenance and trust metadata for each timeline event without requiring raw JSON as the primary UX
+      - Add fixtures/tests proving replay consistency across reconnects and mixed declarative/screenshot runs
 
   - id: TRUST-003
     lane: trust_ux

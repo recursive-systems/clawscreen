@@ -102,10 +102,29 @@ body {
 .top-bar {
   display: grid;
   gap: var(--space-sm);
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   align-items: baseline;
   padding-bottom: var(--space-md);
   border-bottom: 1px solid var(--line);
+}
+
+.kiosk-unlock-zone {
+  user-select: none;
+}
+
+.kiosk-mode-toggle {
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: var(--text-xs);
+  align-self: start;
+}
+
+.app[data-mode='kiosk'] .kiosk-mode-toggle {
+  display: none;
+}
+
+.app[data-mode='kiosk'] .kiosk-unlock-zone {
+  cursor: pointer;
 }
 
 h1 {
@@ -280,10 +299,28 @@ h1,
   padding: 0.65rem;
 }
 
-.chat-composer .status,
 .chat-composer .controls-row,
 .chat-composer #retryBtn {
   display: none;
+}
+
+.app[data-mode='kiosk'] .profile-nav,
+.app[data-mode='kiosk'] .chat-composer .prompt-row,
+.app[data-mode='kiosk'] .chat-composer .controls-row,
+.app[data-mode='kiosk'] .chat-composer .advanced-tools {
+  display: none;
+}
+
+.app[data-mode='kiosk'] .scene-layout {
+  padding-bottom: 6rem;
+}
+
+.app[data-mode='kiosk'] .chat-composer {
+  padding: 0.5rem 0.7rem;
+}
+
+.app[data-mode='kiosk'] .status {
+  margin: 0;
 }
 
 .chat-composer .prompt-row {
@@ -1094,10 +1131,43 @@ pre {
   color: var(--text-secondary);
 }
 
+.source-badge.backend-offline {
+  background: rgba(194, 80, 74, 0.08);
+  border-color: rgba(194, 80, 74, 0.35);
+  color: var(--error);
+}
+
+.source-badge.backend-online {
+  background: rgba(74, 140, 106, 0.09);
+  border-color: rgba(74, 140, 106, 0.35);
+  color: var(--ok);
+}
+
+.source-badge.freshness-aging {
+  background: rgba(184, 134, 46, 0.08);
+  border-color: rgba(184, 134, 46, 0.35);
+  color: var(--warn);
+}
+
+.source-badge.freshness-stale {
+  background: rgba(194, 80, 74, 0.08);
+  border-color: rgba(194, 80, 74, 0.35);
+  color: var(--error);
+}
+
 .screen-updated-at {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-xs);
+}
+
+.screen-updated-at[data-freshness='aging'] {
+  color: var(--warn);
+}
+
+.screen-updated-at[data-freshness='stale'] {
+  color: var(--error);
+  font-weight: 600;
 }
 
 .app[data-state='thinking'] .status,
@@ -1114,6 +1184,22 @@ pre {
 .app[data-state='error'] .status {
   border-color: rgba(194, 80, 74, 0.35);
   background: rgba(194, 80, 74, 0.08);
+}
+
+.app[data-view='idle'] .scene-card {
+  opacity: 0.94;
+}
+
+.app[data-view='active'] .scene-card {
+  opacity: 1;
+}
+
+.app[data-view='alert'] .top-bar {
+  border-bottom-color: rgba(194, 80, 74, 0.35);
+}
+
+.app[data-view='alert'] .chat-composer {
+  border-color: rgba(194, 80, 74, 0.35);
 }
 
 /* ================================================================
@@ -1205,12 +1291,13 @@ pre {
 
 @media (max-width: 1080px) {
   .top-bar {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr auto;
   }
 
   .scene-meta {
     justify-items: start;
     text-align: left;
+    grid-column: 1 / -1;
   }
 }
 

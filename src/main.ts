@@ -10,15 +10,23 @@ import {
 import { renderNode } from './render/registry';
 import { applyEnvelopeBatch } from './protocol/applyMessages';
 import { unwrapA2uiPayload } from './protocol/unwrapPayload';
+import { composeHudPayload } from './protocol/hudComposer';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
 const A2UI_ACTION_ENDPOINT_CANDIDATES = ['/a2ui/action', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/action`];
+const HEALTH_ENDPOINT_CANDIDATES = ['/healthz', `${window.location.protocol}//${window.location.hostname}:18841/healthz`];
 const REQUEST_TIMEOUT_MS = 130_000;
 const MAX_RETRIES = 2;
 const MAX_PROMPT_LENGTH = 1200;
 const A2UI_STORAGE_KEY = 'clawscreen.lastKnownGoodA2UI.v1';
 const PROFILES_STORAGE_KEY = 'clawscreen.screenProfiles.v1';
+const UI_MODE_STORAGE_KEY = 'clawscreen.uiMode.v1';
+const KIOSK_UNLOCK_HOLD_MS = 1200;
+const KIOSK_IDLE_RETURN_MS = 45000;
+const HEALTH_POLL_INTERVAL_MS = 30000;
+const FRESH_DATA_MS = 5 * 60 * 1000;
+const STALE_DATA_MS = 15 * 60 * 1000;
 
 type ScreenProfile = {
   id: string;
@@ -52,6 +60,8 @@ type RunSummary = {
   };
 };
 
+type UiMode = 'kiosk' | 'admin';
+
 const els = {
   app: document.getElementById('app') as HTMLElement,
   time: document.getElementById('timeDisplay') as HTMLElement,
@@ -83,7 +93,9 @@ const els = {
   statusInfo: document.getElementById('statusInfo') as HTMLElement,
   statusMessage: document.getElementById('statusMessage') as HTMLElement,
   sourceBadges: document.getElementById('sourceBadges') as HTMLElement,
-  screenUpdatedAt: document.getElementById('screenUpdatedAt') as HTMLElement
+  screenUpdatedAt: document.getElementById('screenUpdatedAt') as HTMLElement,
+  kioskModeToggleBtn: document.getElementById('kioskModeToggleBtn') as HTMLButtonElement,
+  kioskUnlockZone: document.getElementById('kioskUnlockZone') as HTMLElement
 };
 
 const state: {
@@ -97,6 +109,10 @@ const state: {
   isSubmitting: boolean;
   isActionSubmitting: boolean;
   runSummary: RunSummary | null;
+  uiMode: UiMode;
+  idleViewTimer: number | null;
+  backendHealthy: boolean;
+  healthPollTimer: number | null;
 } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
@@ -107,29 +123,33 @@ const state: {
   autoRefreshTimer: null,
   isSubmitting: false,
   isActionSubmitting: false,
-  runSummary: null
+  runSummary: null,
+  uiMode: 'kiosk',
+  idleViewTimer: null,
+  backendHealthy: true,
+  healthPollTimer: null
 };
 
 const offlineFallbackPayload: A2UICompatiblePayload = {
   version: '0.8',
   screen: {
-    title: 'Offline Dev Fallback',
-    subtitle: 'Gateway unavailable — local payload rendered',
+    title: 'Saved View',
+    subtitle: 'Live update unavailable — showing saved view',
     updatedAt: new Date().toISOString(),
     source: 'local_fallback',
     blocks: [
       {
         type: 'card',
-        title: 'Prompt-to-Screen is active',
-        body: 'You are seeing a minimal local fallback used only when generation cannot be reached.'
+        title: 'Your screen is ready',
+        body: 'This view keeps your screen usable when live updates are temporarily unavailable.'
       },
       {
         type: 'list',
         title: 'Next checks',
         items: [
-          'Verify OpenClaw Gateway route for A2UI generation',
-          'Submit a prompt to confirm dynamic payload changes',
-          'Use “Show Raw” to inspect returned payload'
+          'Check your connection and try again',
+          'Ask for a new update',
+          'Open More options if you want details'
         ]
       }
     ]
@@ -160,8 +180,8 @@ function heuristicPayloadFromPrompt(prompt: string): A2UICompatiblePayload {
   }
 
   if (/executive|overview|system|status|openclaw/.test(lower)) {
-    blocks.push({ type: 'metric', title: 'System snapshot', label: 'Mode', value: 'Prototype / Prompt-to-Screen' });
-    blocks.push({ type: 'list', title: 'Suggested checks', items: ['Gateway health', 'Active automations', 'Recent updates or failures'] });
+    blocks.push({ type: 'metric', title: 'Home snapshot', label: 'Mode', value: 'Personal Assistant' });
+    blocks.push({ type: 'list', title: 'Suggested checks', items: ['Connection status', 'Active routines', 'Recent changes'] });
   }
 
   if (blocks.length === 1) {
@@ -175,10 +195,10 @@ function heuristicPayloadFromPrompt(prompt: string): A2UICompatiblePayload {
   return {
     version: '0.8',
     screen: {
-      title: 'Dynamic Prompt View',
-      subtitle: 'Local heuristic render (while Gateway generation endpoint is unavailable)',
+      title: 'Live View',
+      subtitle: 'Quick local view while live updates reconnect',
       updatedAt: nowIso(),
-      source: 'local_heuristic',
+      source: 'local view',
       blocks
     }
   };
@@ -190,6 +210,29 @@ function formatLastUpdated(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'Last updated: just now';
   return `Last updated: ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function getTimestampAgeMs(iso: string): number | null {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return null;
+  const age = Date.now() - ts;
+  return age >= 0 ? age : 0;
+}
+
+function getFreshnessClass(ageMs: number | null): 'fresh' | 'aging' | 'stale' {
+  if (ageMs == null) return 'aging';
+  if (ageMs >= STALE_DATA_MS) return 'stale';
+  if (ageMs >= FRESH_DATA_MS) return 'aging';
+  return 'fresh';
+}
+
+function formatAge(ageMs: number | null): string {
+  if (ageMs == null) return 'unknown age';
+  const mins = Math.round(ageMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  return `${hrs}h ago`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -255,19 +298,15 @@ function refreshTrustMeta(payload: A2UICompatiblePayload) {
   const badges: string[] = [];
 
   if (state.runSummary) {
-    badges.push(`<span class="source-badge trust-${state.runSummary.trust}">${state.runSummary.trust === 'trusted' ? 'Trusted path' : 'Untrusted path'}</span>`);
-    badges.push(`<span class="source-badge">${normalizeSourceLabel(state.runSummary.sourceLabel || 'Run timeline')}</span>`);
-    badges.push(`<span class="source-badge capability-badge">${state.runSummary.eventCount} event${state.runSummary.eventCount === 1 ? '' : 's'}</span>`);
-    if (state.runSummary.capabilities?.interrupts) badges.push('<span class="source-badge capability-badge">Interrupts</span>');
-    if (state.runSummary.capabilities?.modalities?.length) {
-      badges.push(`<span class="source-badge capability-badge">${state.runSummary.capabilities.modalities.slice(0, 2).join(' · ')}</span>`);
-    }
+    badges.push(`<span class="source-badge trust-${state.runSummary.trust}">${state.runSummary.trust === 'trusted' ? 'Checked' : 'Please review'}</span>`);
   }
 
+  badges.push(`<span class="source-badge capability-badge backend-${state.backendHealthy ? 'online' : 'offline'}">${state.backendHealthy ? 'Connected' : 'Offline'}</span>`);
+
   if (!sources.length && !badges.length) {
-    els.sourceBadges.innerHTML = '<span class="trust-placeholder">Source: generated locally</span>';
+    els.sourceBadges.innerHTML = '<span class="trust-placeholder">Using saved information</span>';
   } else {
-    const sourceBadges = sources.map((source) => `<span class="source-badge">${source}</span>`);
+    const sourceBadges = sources.slice(0, 2).map((source) => `<span class="source-badge">${source}</span>`);
     els.sourceBadges.innerHTML = [...badges, ...sourceBadges].join('');
   }
 
@@ -279,7 +318,18 @@ function refreshTrustMeta(payload: A2UICompatiblePayload) {
     (typeof screen.generatedAt === 'string' && screen.generatedAt) ||
     nowIso();
 
-  els.screenUpdatedAt.textContent = formatLastUpdated(timestampCandidate);
+  const age = getTimestampAgeMs(timestampCandidate);
+  const freshness = getFreshnessClass(age);
+  els.screenUpdatedAt.dataset.freshness = freshness;
+  els.screenUpdatedAt.textContent = `${formatLastUpdated(timestampCandidate)} (${formatAge(age)})`;
+
+  if (freshness === 'stale') {
+    badges.push('<span class="source-badge freshness-stale">Needs refresh</span>');
+    els.sourceBadges.innerHTML = [...badges, ...sources.map((source) => `<span class="source-badge">${source}</span>`)].join('');
+  } else if (freshness === 'aging') {
+    badges.push('<span class="source-badge freshness-aging">Slightly out of date</span>');
+    els.sourceBadges.innerHTML = [...badges, ...sources.map((source) => `<span class="source-badge">${source}</span>`)].join('');
+  }
 }
 
 function formatClock() {
@@ -288,13 +338,61 @@ function formatClock() {
   els.date.textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+function resolveRequestedUiMode(): UiMode {
+  const params = new URLSearchParams(window.location.search);
+  const modeFromUrl = params.get('mode')?.toLowerCase();
+  if (modeFromUrl === 'admin') return 'admin';
+  if (modeFromUrl === 'kiosk') return 'kiosk';
+
+  const stored = localStorage.getItem(UI_MODE_STORAGE_KEY);
+  return stored === 'admin' ? 'admin' : 'kiosk';
+}
+
+function setHudView(view: 'idle' | 'active' | 'alert') {
+  els.app.dataset.view = view;
+}
+
+function clearIdleViewTimer() {
+  if (state.idleViewTimer) {
+    window.clearTimeout(state.idleViewTimer);
+    state.idleViewTimer = null;
+  }
+}
+
+function scheduleReturnToIdle() {
+  clearIdleViewTimer();
+  if (state.uiMode !== 'kiosk') return;
+  state.idleViewTimer = window.setTimeout(() => {
+    setHudView('idle');
+    state.idleViewTimer = null;
+  }, KIOSK_IDLE_RETURN_MS);
+}
+
+function applyUiMode(mode: UiMode, persist = true) {
+  state.uiMode = mode;
+  els.app.dataset.mode = mode;
+  els.kioskModeToggleBtn.textContent = mode === 'kiosk' ? 'Admin' : 'Kiosk';
+  els.kioskModeToggleBtn.setAttribute('aria-label', mode === 'kiosk' ? 'Switch to admin mode' : 'Switch to kiosk mode');
+
+  if (persist) localStorage.setItem(UI_MODE_STORAGE_KEY, mode);
+
+  if (mode === 'kiosk') {
+    if (els.profileManagerDialog.open) els.profileManagerDialog.close();
+    if (els.rawDialog.open) els.rawDialog.close();
+    scheduleReturnToIdle();
+  } else {
+    clearIdleViewTimer();
+    setHudView(els.app.dataset.state === 'error' ? 'alert' : 'active');
+  }
+}
+
 function setUiState(nextState: string, message?: string) {
   els.app.dataset.state = nextState;
   const isBusy = nextState === 'thinking' || nextState === 'rendering';
   els.renderSurface.setAttribute('aria-busy', isBusy ? 'true' : 'false');
 
   els.submitBtn.classList.toggle('is-loading', isBusy);
-  els.submitBtn.textContent = isBusy ? 'Working…' : 'Create screen';
+  els.submitBtn.textContent = isBusy ? 'Working…' : 'Update';
   els.submitBtn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
 
   const pillByState: Record<string, string> = {
@@ -327,6 +425,18 @@ function setUiState(nextState: string, message?: string) {
 
   if (message) {
     els.app.setAttribute('aria-label', message);
+  }
+
+  if (nextState === 'error') {
+    setHudView('alert');
+    clearIdleViewTimer();
+  } else if (nextState === 'idle') {
+    setHudView('idle');
+    clearIdleViewTimer();
+  } else {
+    setHudView('active');
+    if (nextState === 'ready') scheduleReturnToIdle();
+    else clearIdleViewTimer();
   }
 }
 
@@ -415,8 +525,8 @@ function loadProfiles() {
 function getFriendlyErrorMessage(error: Error): string {
   const message = String(error?.message || '').toLowerCase();
   if (message.includes('timed out') || message.includes('abort')) return 'This request took too long, so we showed a local draft instead.';
-  if (message.includes('failed to fetch') || message.includes('networkerror')) return 'We could not reach live generation, so we showed a local draft instead.';
-  return 'Live generation is unavailable, so we made a local draft to keep you moving.';
+  if (message.includes('failed to fetch') || message.includes('networkerror')) return 'We could not reach live updates, so we showed a local draft instead.';
+  return 'Live updates are unavailable, so we made a local draft to keep you moving.';
 }
 
 function getActiveProfile(): ScreenProfile {
@@ -862,7 +972,13 @@ function renderA2ui(payload: unknown, source: string) {
   if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
 
   setUiState('rendering', 'Building your screen now…');
-  const screen = normalized.payload.screen || {};
+  const composedPayload = composeHudPayload(normalized.payload, {
+    prompt: state.lastPrompt,
+    trust: state.runSummary?.trust || 'trusted',
+    eventCount: state.runSummary?.eventCount
+  });
+
+  const screen = composedPayload.screen || {};
   const title = screen.title || screen.name || 'Dynamic Screen';
   const subtitle = screen.subtitle || `Generated from prompt at ${new Date().toLocaleTimeString()}`;
 
@@ -874,8 +990,8 @@ function renderA2ui(payload: unknown, source: string) {
   syncRenderSurface(nodesToRender);
 
   state.renderState = normalized.renderState;
-  state.lastPayload = normalized.payload;
-  persistLkg(normalized.payload);
+  state.lastPayload = composedPayload;
+  persistLkg(composedPayload);
   refreshTrustMeta(normalized.payload);
 
   const shouldPersistProfilePayload = source !== 'profile-switch-empty' && source !== 'startup-offline-fallback';
@@ -883,7 +999,7 @@ function renderA2ui(payload: unknown, source: string) {
     updateActiveProfile((profile) => ({
       ...profile,
       lastPrompt: state.lastPrompt,
-      lastPayload: normalized.payload,
+      lastPayload: composedPayload,
       updatedAt: nowIso()
     }));
     renderProfileTabs();
@@ -896,6 +1012,54 @@ function showRawPayload() {
   if (!state.lastPayload) return;
   els.rawOutput.textContent = JSON.stringify(state.lastPayload, null, 2);
   els.rawDialog.showModal();
+}
+
+async function checkBackendHealth() {
+  const failures: string[] = [];
+  let healthy = false;
+
+  for (const endpoint of HEALTH_ENDPOINT_CANDIDATES) {
+    try {
+      const res = await withTimeout(5000, fetch(endpoint, { headers: { Accept: 'application/json' } }));
+      if (res.ok) {
+        healthy = true;
+        break;
+      }
+      failures.push(`${endpoint} -> ${res.status}`);
+    } catch (err) {
+      failures.push(`${endpoint} -> ${(err as Error).message}`);
+    }
+  }
+
+  const previous = state.backendHealthy;
+  state.backendHealthy = healthy;
+
+  if (previous !== healthy) {
+    if (!healthy && !state.isSubmitting) {
+      setUiState('error', 'Connection lost. Showing your most recent saved view.');
+    } else if (healthy && !state.isSubmitting && els.app.dataset.state === 'error') {
+      setUiState('ready', 'Connection restored. Live updates are available.');
+    }
+  }
+
+  if (!healthy && failures.length) {
+    els.statusInfo.style.display = 'inline-flex';
+    els.statusInfo.setAttribute('title', failures.slice(0, 2).join(' | '));
+  }
+
+  if (state.lastPayload) refreshTrustMeta(state.lastPayload);
+}
+
+function startHealthPolling() {
+  if (state.healthPollTimer) {
+    window.clearInterval(state.healthPollTimer);
+    state.healthPollTimer = null;
+  }
+
+  checkBackendHealth().catch(() => { /* ignore startup probe errors */ });
+  state.healthPollTimer = window.setInterval(() => {
+    checkBackendHealth().catch(() => { /* ignore poll errors */ });
+  }, HEALTH_POLL_INTERVAL_MS);
 }
 
 function setBusyControls(isBusy: boolean) {
@@ -922,7 +1086,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
   const trimmed = (prompt || '').trim();
   if (!trimmed) {
-    setUiState('error', 'Please enter what you want to see first. Example: “Show my top 3 priorities for today.”');
+    setUiState('error', 'Tell me what you want to see first. Example: “What are my top 3 priorities today?”');
     els.promptInput.focus();
     return;
   }
@@ -930,13 +1094,13 @@ async function submitPrompt(prompt: string, source = 'prompt') {
   const normalizedPrompt = trimmed.slice(0, MAX_PROMPT_LENGTH);
   state.lastPrompt = normalizedPrompt;
   if (trimmed.length > MAX_PROMPT_LENGTH) {
-    setUiState('thinking', `Long prompt detected — we used the first ${MAX_PROMPT_LENGTH} characters for reliability.`);
+    setUiState('thinking', `Your request was very long, so we shortened it a bit before updating the screen.`);
   }
 
   state.lastError = null;
   state.isSubmitting = true;
   setBusyControls(true);
-  setUiState('thinking', 'Got it — turning your request into a screen layout.');
+  setUiState('thinking', 'Got it — building your screen now.');
 
   try {
     renderLoadingSkeleton();
@@ -944,7 +1108,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
       onStatus: (statusText) => {
         const cleanStatus = String(statusText || '').trim();
         if (cleanStatus) {
-          setUiState('thinking', `Live update: ${cleanStatus}`);
+          setUiState('thinking', `Update: ${cleanStatus}`);
           return;
         }
         setUiState('thinking', 'Still working… complex requests can take about a minute.');
@@ -953,7 +1117,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
         try {
           state.runSummary = extractRunSummary(partialPayload);
           renderA2ui(unwrapA2uiPayload(partialPayload), 'partial');
-          setUiState('rendering', 'Live updates are in. Finalizing your full screen…');
+          setUiState('rendering', 'Got an early update. Finishing your full screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
@@ -974,7 +1138,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
     if (lkg && isSafePayload(lkg)) {
       try {
         renderA2ui(lkg, 'last-known-good');
-        setUiState('error', 'Couldn’t refresh right now. We restored your last working screen. Choose Try again when ready.');
+        setUiState('error', 'Couldn’t refresh right now. Restored your last working view.');
         return;
       } catch {
         // continue to offline fallback
@@ -983,7 +1147,7 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 
     try {
       renderA2ui(offlineFallbackPayload, 'offline-fallback');
-      setUiState('error', 'We can’t reach live generation, so you’re seeing offline fallback content for now.');
+      setUiState('error', 'Live updates are unavailable right now. Showing your saved view.');
     } catch {
       setUiState('error', 'Something unexpected failed. Please choose Try again in a moment.');
     }
@@ -994,6 +1158,34 @@ async function submitPrompt(prompt: string, source = 'prompt') {
 }
 
 function wire() {
+  let unlockHoldTimer: number | null = null;
+
+  const clearUnlockTimer = () => {
+    if (unlockHoldTimer) {
+      window.clearTimeout(unlockHoldTimer);
+      unlockHoldTimer = null;
+    }
+  };
+
+  els.kioskModeToggleBtn.addEventListener('click', () => {
+    applyUiMode(state.uiMode === 'kiosk' ? 'admin' : 'kiosk');
+    setUiState('ready', state.uiMode === 'kiosk' ? 'Kiosk mode enabled.' : 'Admin controls unlocked.');
+  });
+
+  els.kioskUnlockZone.addEventListener('pointerdown', () => {
+    if (state.uiMode !== 'kiosk') return;
+    clearUnlockTimer();
+    unlockHoldTimer = window.setTimeout(() => {
+      applyUiMode('admin');
+      setUiState('ready', 'Admin controls unlocked. Use the Kiosk button to lock again.');
+      unlockHoldTimer = null;
+    }, KIOSK_UNLOCK_HOLD_MS);
+  });
+
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((eventName) => {
+    els.kioskUnlockZone.addEventListener(eventName, clearUnlockTimer);
+  });
+
   els.profileTabs.addEventListener('keydown', handleProfileTabsKeydown);
   els.profileManagerTabs.addEventListener('keydown', handleProfileTabsKeydown);
 
@@ -1046,7 +1238,7 @@ function wire() {
       try {
         actionPayload = actionButton.dataset.a2uiAction ? JSON.parse(actionButton.dataset.a2uiAction) as Record<string, unknown> : {};
       } catch {
-        setUiState('error', 'Action payload is invalid and was blocked for safety.');
+        setUiState('error', 'This action could not be run safely.');
         return;
       }
 
@@ -1089,7 +1281,7 @@ function wire() {
         const actionArtifact = unwrapA2uiPayload(response);
         renderA2ui(actionArtifact, 'action');
       } catch (err) {
-        setUiState('error', `Action could not be completed: ${(err as Error).message}`);
+        setUiState('error', `Action could not be completed right now. Please try again.`);
       } finally {
         state.isActionSubmitting = false;
         actionButton.disabled = false;
@@ -1164,7 +1356,14 @@ function wire() {
       return;
     }
 
-    if (event.key === '/' && document.activeElement !== els.promptInput) {
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      applyUiMode(state.uiMode === 'kiosk' ? 'admin' : 'kiosk');
+      setUiState('ready', state.uiMode === 'kiosk' ? 'Kiosk mode enabled.' : 'Admin controls unlocked.');
+      return;
+    }
+
+    if (state.uiMode === 'admin' && event.key === '/' && document.activeElement !== els.promptInput) {
       const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
       if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
         event.preventDefault();
@@ -1187,7 +1386,7 @@ function wire() {
 
   els.renameProfileBtn.addEventListener('click', () => {
     const active = getActiveProfile();
-    const renamedInput = window.prompt('Rename this tab', active.name);
+    const renamedInput = window.prompt('Rename this screen', active.name);
     if (renamedInput == null) {
       setUiState('ready', 'Rename canceled.');
       return;
@@ -1195,12 +1394,12 @@ function wire() {
     const renamed = sanitizeProfileName(renamedInput);
     updateActiveProfile((profile) => ({ ...profile, name: renamed, updatedAt: nowIso() }));
     renderProfileTabs();
-    setUiState('ready', `Tab renamed to “${renamed}”.`);
+    setUiState('ready', `Screen renamed to “${renamed}”.`);
   });
 
   els.deleteProfileBtn.addEventListener('click', () => {
     if (state.profiles.length <= 1) {
-      setUiState('error', 'You need at least one tab to keep your screen saved.');
+      setUiState('error', 'You need at least one saved screen.');
       return;
     }
     const active = getActiveProfile();
@@ -1252,6 +1451,9 @@ function start() {
     persistProfiles();
   }
 
+  state.uiMode = resolveRequestedUiMode();
+  applyUiMode(state.uiMode, false);
+
   wire();
   renderProfileTabs();
 
@@ -1276,7 +1478,10 @@ function start() {
   }
 
   refreshAutoRefreshTimer();
-  setUiState('idle', 'Ready when you are — describe what you want and choose Create screen.');
+  startHealthPolling();
+  setUiState('idle', state.uiMode === 'kiosk'
+    ? 'Display mode is on. Press and hold the clock to open controls.'
+    : 'Ready when you are — ask a question and tap Update.');
 }
 
 start();

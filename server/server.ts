@@ -14,6 +14,7 @@ import {
 import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
 import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
 import { createRunTimelineStore } from './runTimeline.js';
+import { applyGenerationGuardrails } from './generationGuardrails.js';
 
 const PORT = Number(process.env.A2UI_PORT || 18841);
 const HOST = process.env.A2UI_HOST || '0.0.0.0';
@@ -255,6 +256,16 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
       })
     : null;
 
+  const actionIntent = normalizeIntentForDispatch(inferActionIntent(event));
+  const completedAction = createActionResponseEnvelope(buildCompletedActionResponse({
+    version,
+    taskId,
+    event,
+    targetText,
+    provenance,
+    intent: actionIntent
+  }));
+
   const terminal = controlTerminal || interruptTerminal || (event.type === 'auth.required'
     ? createActionResponseEnvelope({
         version,
@@ -270,35 +281,7 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
           fallback_action: 'retry'
         }
       })
-    : createActionResponseEnvelope({
-        version,
-        taskId,
-        status: 'completed',
-        outcome: 'success',
-        progressMessage: 'Action execution completed',
-        output: {
-          version,
-          screen: {
-            title: event.type === 'button.click' ? 'Action processed' : 'Event processed',
-            subtitle: `event_id=${event.id}`,
-            blocks: [
-              { type: 'text', title: 'Type', text: event.type },
-              { type: 'text', title: 'Target', text: targetText },
-              { type: 'text', title: 'Timestamp', text: event.timestamp },
-              {
-                type: 'notes',
-                title: 'Provenance',
-                text: `Initiator: ${provenance.origin} · Source: ${provenance.tool || 'unknown'} · Confidence: ${typeof provenance.confidence === 'number' ? provenance.confidence.toFixed(2) : 'n/a'}`
-              },
-              {
-                type: 'card',
-                title: 'Human controls',
-                text: 'Use pause, resume, interrupt, or takeover controls for sensitive tasks.'
-              }
-            ]
-          }
-        }
-      }));
+    : completedAction);
 
   const run = runTimeline.appendMany(runId, canonicalEventsFromActionResponse({
     runId,
@@ -363,6 +346,7 @@ type Block = {
   loading?: boolean;
   disabled?: boolean;
   delta?: string;
+  size?: 'small' | 'medium' | 'large';
   children?: Block[];
   src?: string;
   url?: string;
@@ -411,6 +395,12 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, on
       '- If the user asks for interactive controls, emit those exact component types and include fields they need to render: button(label/action), textfield(label|placeholder|bind|variant), choicepicker(items|bind|multiple|selected), datetimeinput(label|bind|value|min|max).',
       '- Preserve aliases requested by upstream clients (e.g. multiplechoice) and prefer bind keys for stateful controls.',
       'Never include HTML/script tags, javascript: URLs, or inline event handlers.',
+      'Required HUD structure (must be present):',
+      '- Exactly one summary block near the top (card/text/notes).',
+      '- At least one priorities list, one timeline list, and one alerts list.',
+      '- At least one metric block.',
+      '- Maximum 10 top-level blocks.',
+      '- Keep text/body fields <= 180 chars and list items <= 120 chars.',
       'Each block must be complete:',
       '- list: must include at least one item',
       '- metric: must include value',
@@ -493,8 +483,15 @@ async function generateViaOpenClawGateway({ prompt, context }: GenerateInput, on
         // Trust boundary: model output is coerced into canonical messages before any rendering shape is used.
         const envelope = toCanonicalEnvelope(parsed);
         const normalized = normalizeA2uiPayload(canonicalToCompatiblePayload(envelope), prompt);
-        const issues = getRenderableIssues(normalized);
-        if (!issues.length) return normalized;
+        const guardrail = applyGenerationGuardrails(normalized, prompt);
+        const issues = [...getRenderableIssues(guardrail.normalized), ...guardrail.issues];
+
+        if (!issues.length) {
+          if (guardrail.repaired && guardrail.repairNotes.length) {
+            console.log(`[clawscreen] auto-repaired output: ${guardrail.repairNotes.join(', ')}`);
+          }
+          return guardrail.normalized;
+        }
 
         feedback = `Previous output failed validation: ${issues.join('; ')}`;
         break;
@@ -670,6 +667,159 @@ function tryParseEmbeddedJson(value: string): unknown | null {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type ActionResponseBuildInput = {
+  version: string;
+  taskId: string;
+  event: {
+    id: string;
+    type: string;
+    target?: string;
+    timestamp: string;
+    payload?: unknown;
+  };
+  targetText: string;
+  provenance: {
+    origin: 'agent' | 'user' | 'system';
+    tool?: string;
+    confidence?: number;
+    timestamp?: string;
+  };
+  intent: string;
+};
+
+function inferActionIntent(event: { type: string; payload?: unknown }): string {
+  const payload = event.payload && typeof event.payload === 'object' ? (event.payload as Record<string, unknown>) : {};
+  return cleanText(payload.type || payload.kind || payload.intent || event.type).toLowerCase() || 'action';
+}
+
+function normalizeActionIntent(intent: string): string {
+  const lower = cleanText(intent).toLowerCase();
+  if (!lower) return 'action';
+  if (lower.includes('refresh')) return 'refresh.request';
+  if (lower.includes('view.switch') || lower.includes('switch') || lower.includes('tab')) return 'view.switch';
+  if (lower.includes('focus.plan') || lower.includes('plan next') || lower.includes('focus')) return 'focus.plan';
+  if (lower.includes('alert') && (lower.includes('ack') || lower.includes('resolve'))) return 'alerts.ack';
+  return lower;
+}
+
+function normalizeIntentForDispatch(intent: string): string {
+  return normalizeActionIntent(intent);
+}
+
+function buildCompletedActionResponse(input: ActionResponseBuildInput): {
+  version: string;
+  taskId: string;
+  status: 'completed';
+  outcome: 'success';
+  progressMessage: string;
+  output: {
+    version: string;
+    screen: {
+      title: string;
+      subtitle: string;
+      blocks: Block[];
+    };
+  };
+} {
+  const { version, taskId, event, targetText, provenance, intent } = input;
+
+  const defaultBlocks: Block[] = [
+    { type: 'text', title: 'Type', text: event.type },
+    { type: 'text', title: 'Target', text: targetText },
+    { type: 'text', title: 'Timestamp', text: event.timestamp },
+    {
+      type: 'notes',
+      title: 'Provenance',
+      text: 'Initiator: ' + provenance.origin + ' · Source: ' + (provenance.tool || 'unknown') + ' · Confidence: ' + (typeof provenance.confidence === 'number' ? provenance.confidence.toFixed(2) : 'n/a')
+    },
+    {
+      type: 'card',
+      title: 'Human controls',
+      text: 'Use pause, resume, interrupt, or takeover controls for sensitive tasks.'
+    }
+  ];
+
+  const templates: Record<string, { title: string; progress: string; blocks: Block[] }> = {
+    'refresh.request': {
+      title: 'Refresh requested',
+      progress: 'Queued live refresh',
+      blocks: [
+        { type: 'metric', title: 'Refresh', value: 'Queued', delta: 'Fetching newest sources now', size: 'small' },
+        {
+          type: 'list',
+          title: 'What happens next',
+          items: ['Run data source checks', 'Regenerate HUD payload', 'Update timeline + alerts']
+        },
+        { type: 'button', label: 'Run refresh now', variant: 'primary', action: { type: 'refresh.request', target: 'hud' } }
+      ]
+    },
+    'view.switch': {
+      title: 'View changed',
+      progress: 'Applied view switch',
+      blocks: [
+        { type: 'text', title: 'Target view', text: cleanText((event.payload as any)?.target || event.target || 'default') },
+        {
+          type: 'list',
+          title: 'Suggested checks',
+          items: ['Review top items in this view', 'Take one action', 'Refresh for latest data']
+        }
+      ]
+    },
+    'focus.plan': {
+      title: '30-minute plan',
+      progress: 'Generated focus plan',
+      blocks: [
+        {
+          type: 'list',
+          title: 'Focus sequence',
+          items: ['00-05 min: confirm outcome and blockers', '05-25 min: execute highest-leverage task', '25-30 min: capture follow-ups and next step']
+        },
+        { type: 'metric', title: 'Session', value: '30 min', delta: 'Single-task focus', size: 'small' }
+      ]
+    },
+    'alerts.ack': {
+      title: 'Alert acknowledged',
+      progress: 'Recorded alert acknowledgement',
+      blocks: [
+        { type: 'metric', title: 'Alert state', value: 'Acknowledged', delta: 'Pending verification', size: 'small' },
+        {
+          type: 'list',
+          title: 'Next steps',
+          items: ['Verify condition is resolved', 'Refresh alerts feed', 'Document mitigation notes']
+        }
+      ]
+    }
+  };
+
+  const template = templates[intent] || {
+    title: event.type === 'button.click' ? 'Action processed' : 'Event processed',
+    progress: 'Action execution completed',
+    blocks: defaultBlocks
+  };
+
+  const blocks = [...template.blocks];
+  if (template.blocks !== defaultBlocks) {
+    blocks.push({ type: 'text', title: 'Event', text: event.type });
+    blocks.push({ type: 'text', title: 'Target', text: targetText });
+  }
+
+  return {
+    version,
+    taskId,
+    status: 'completed',
+    outcome: 'success',
+    progressMessage: template.progress,
+    output: {
+      version,
+      screen: {
+        title: template.title,
+        subtitle: 'event_id=' + event.id,
+        blocks
+      }
+    }
+  };
+}
+
 function normalizeA2uiPayload(raw: Record<string, unknown>, fallbackPrompt = 'Generated screen'): Normalized {
   const payload = (raw?.a2ui ?? raw?.payload ?? raw) as any;
   const version = typeof payload?.version === 'string' ? payload.version : '0.8';
@@ -703,6 +853,8 @@ function normalizeBlock(input: unknown): Block | null {
   const rawType = cleanText(i.type || i.kind || i.component).toLowerCase();
   const type = coerceTrustedComponentType(rawType, 'card');
   const block: Block = { type };
+  const size = cleanText(i.size || i.span).toLowerCase();
+  if (size === 'small' || size === 'medium' || size === 'large') block.size = size;
   const title = cleanText(i.title || i.label);
   if (title) block.title = title;
 

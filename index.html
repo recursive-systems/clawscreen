@@ -3,22 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ClawScreen — A2UI Prompt-to-Screen v1</title>
+    <title>ClawScreen — Smart Home Display</title>
   </head>
   <body data-theme="light">
     <div class="app" id="app" data-state="idle">
       <header class="top-bar" aria-live="polite">
-        <div>
+        <div id="kioskUnlockZone" class="kiosk-unlock-zone" title="Press and hold to unlock admin controls">
           <p class="label">Now</p>
           <h1 id="timeDisplay">--:--</h1>
           <p id="dateDisplay" class="subtle">Loading date…</p>
         </div>
 
         <div class="scene-meta">
-          <p class="label">A2UI Screen</p>
+          <p class="label">At a Glance</p>
           <h2 id="sceneTitle">Dynamic Screen</h2>
           <p id="sceneSubtitle" class="subtle"></p>
         </div>
+
+        <button id="kioskModeToggleBtn" type="button" class="kiosk-mode-toggle" aria-label="Toggle kiosk mode">
+          Admin
+        </button>
       </header>
 
       <nav class="profile-nav" aria-label="Saved screens navigation">
@@ -32,15 +36,15 @@
         <section id="sceneCards" class="cards-grid" aria-live="polite"></section>
       </main>
 
-      <section class="controls chat-composer" aria-label="Prompt composer">
+      <section class="controls chat-composer" aria-label="Ask for an update">
         <div class="prompt-row">
           <input
             id="promptInput"
             type="text"
-            placeholder="Type naturally (example: Show me everything before leaving in 20 minutes)"
+            placeholder="Ask naturally (example: What should I focus on before I leave?)"
             autocomplete="off"
           />
-          <button id="generateBtn" type="button">Create screen</button>
+          <button id="generateBtn" type="button">Update</button>
           <button id="retryBtn" type="button">Try again</button>
         </div>
 
@@ -50,10 +54,10 @@
             <span id="statusTitle" class="status-title">Screen status</span>
             <span id="statusInfo" class="status-info" title="">ⓘ</span>
           </div>
-          <p id="statusMessage" class="status-message">Describe what you want to see, then choose Create screen.</p>
+          <p id="statusMessage" class="status-message">Ask what you want to see, then tap Update.</p>
           <div class="trust-row" aria-live="polite">
             <div id="sourceBadges" class="source-badges" aria-label="Data sources">
-              <span class="trust-placeholder">Source: waiting for live data</span>
+              <span class="trust-placeholder">Waiting for your latest update</span>
             </div>
             <p id="screenUpdatedAt" class="screen-updated-at">Last updated: —</p>
           </div>
@@ -61,8 +65,8 @@
 
         <div class="controls-row">
           <details class="advanced-tools">
-            <summary>Debug tools (advanced)</summary>
-            <button id="showRawBtn" type="button">View raw JSON payload</button>
+            <summary>More options</summary>
+            <button id="showRawBtn" type="button">View details</button>
           </details>
         </div>
       </section>
@@ -74,10 +78,10 @@
         <button id="profileManagerCloseBtn" type="button">Close</button>
       </div>
       <div class="profile-actions">
-        <button id="saveProfileBtn" type="button">Save copy as new tab</button>
-        <button id="renameProfileBtn" type="button">Rename tab</button>
-        <button id="deleteProfileBtn" type="button">Delete tab</button>
-        <button id="refreshProfileBtn" type="button">Update this screen</button>
+        <button id="saveProfileBtn" type="button">Save as new screen</button>
+        <button id="renameProfileBtn" type="button">Rename screen</button>
+        <button id="deleteProfileBtn" type="button">Delete screen</button>
+        <button id="refreshProfileBtn" type="button">Refresh this screen</button>
       </div>
       <div class="profile-refresh-row">
         <label class="auto-refresh-toggle" for="autoRefreshEnabled">
@@ -97,7 +101,7 @@
 
     <dialog id="rawSceneDialog" class="raw-dialog">
       <div class="dialog-head">
-        <h3>Raw A2UI Payload</h3>
+        <h3>Details</h3>
         <button id="rawCloseBtn" type="button">Close</button>
       </div>
       <pre id="rawSceneOutput"></pre>
