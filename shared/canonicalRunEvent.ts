@@ -1,4 +1,5 @@
 import type { A2UICanonicalEnvelope } from './a2ui.js';
+import { parseMixedRunStream } from './mixedRunStream.js';
 import type {
   A2UIActionProvenance,
   A2UIActionResponseEnvelope,
@@ -12,6 +13,7 @@ export type RunEventTrust = 'trusted' | 'untrusted';
 export type RunEventKind =
   | 'run_started'
   | 'status_delta'
+  | 'text_chunk'
   | 'ui_delta'
   | 'input_required'
   | 'interrupted'
@@ -49,6 +51,7 @@ export type CanonicalRunEvent = {
   surfaceId?: string;
   capabilities?: CanonicalRunCapabilities;
   provenance?: A2UIActionProvenance;
+  text?: string;
   ui?: A2UICanonicalEnvelope;
   inputRequired?: A2UIInputRequired;
   interrupt?: A2UIInterruptPayload;
@@ -254,10 +257,55 @@ export function canonicalEventsFromGenerateResult(args: {
   trust?: RunEventTrust;
   capabilities?: CanonicalRunCapabilities;
   summary?: string;
+  raw?: unknown;
 }): CanonicalRunEvent[] {
   const trust = args.trust || 'trusted';
   const source = args.source || { channel: 'generate', label: 'OpenClaw Gateway', origin: 'remote', tool: 'openclaw-gateway' };
   const timestamp = new Date().toISOString();
+  const rawSegments = args.raw == null ? [] : parseMixedRunStream(args.raw);
+  const orderedContentEvents = rawSegments.flatMap((segment): CanonicalRunEvent[] => {
+    if (segment.kind === 'text') {
+      return [createCanonicalRunEvent({
+        runId: args.runId,
+        timestamp,
+        kind: 'text_chunk',
+        trust,
+        source,
+        summary: segment.text.trim().slice(0, 80) || 'Narrative update',
+        status: 'running',
+        text: segment.text,
+        payload: { text: segment.text }
+      })];
+    }
+
+    return [createCanonicalRunEvent({
+      runId: args.runId,
+      timestamp,
+      kind: 'ui_delta',
+      trust,
+      source,
+      summary: 'Screen updated from canonical envelope',
+      status: 'running',
+      ui: segment.envelope,
+      surfaceId: 'primary',
+      payload: { delimiter: segment.delimiter }
+    })];
+  });
+
+  const contentEvents = orderedContentEvents.length
+    ? orderedContentEvents
+    : [createCanonicalRunEvent({
+        runId: args.runId,
+        timestamp,
+        kind: 'ui_delta',
+        trust,
+        source,
+        summary: 'Screen updated from canonical envelope',
+        status: 'running',
+        ui: args.envelope,
+        surfaceId: 'primary'
+      })];
+
   return [
     createCanonicalRunEvent({
       runId: args.runId,
@@ -269,17 +317,7 @@ export function canonicalEventsFromGenerateResult(args: {
       status: 'running',
       capabilities: args.capabilities
     }),
-    createCanonicalRunEvent({
-      runId: args.runId,
-      timestamp,
-      kind: 'ui_delta',
-      trust,
-      source,
-      summary: 'Screen updated from canonical envelope',
-      status: 'running',
-      ui: args.envelope,
-      surfaceId: 'primary'
-    }),
+    ...contentEvents,
     createCanonicalRunEvent({
       runId: args.runId,
       timestamp,

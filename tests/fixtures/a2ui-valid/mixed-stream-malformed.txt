@@ -1,0 +1,7 @@
+Lead narrative before malformed payload.
+
+```a2ui
+{"version":"0.9","screen":{"title":"Broken","blocks":[{"type":"text","text":"oops"}]}
+```
+
+Tail narrative after malformed payload.

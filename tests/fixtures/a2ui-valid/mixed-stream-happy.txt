@@ -1,0 +1,11 @@
+Narrative intro: here's the current dashboard status.
+
+```a2ui
+{"version":"0.9","screen":{"title":"Ops HUD","blocks":[{"type":"text","text":"First screen"}]}}
+```
+
+After the first screen, keep this note for the operator.
+
+<a2ui>{"version":"0.9","screen":{"title":"Ops HUD 2","blocks":[{"type":"text","text":"Second screen"}]}}</a2ui>
+
+Final narrative wrap-up.
