@@ -7,6 +7,8 @@ import {
   JsonValue,
   createInitialRenderState
 } from '../shared/a2ui';
+import type { CanonicalRunEvent } from '../shared/canonicalRunEvent';
+import { replayRunEvents } from '../shared/runReplay';
 import { renderNode } from './render/registry';
 import { applyEnvelopeBatch } from './protocol/applyMessages';
 import { unwrapA2uiPayload } from './protocol/unwrapPayload';
@@ -60,6 +62,12 @@ type RunSummary = {
   };
 };
 
+type RunTimelineSnapshot = {
+  runId: string;
+  events: CanonicalRunEvent[];
+  summary: RunSummary | null;
+};
+
 type UiMode = 'kiosk' | 'admin';
 
 const els = {
@@ -84,6 +92,12 @@ const els = {
   autoRefreshEnabled: document.getElementById('autoRefreshEnabled') as HTMLInputElement,
   autoRefreshInterval: document.getElementById('autoRefreshInterval') as HTMLSelectElement,
   renderSurface: document.getElementById('sceneCards') as HTMLElement,
+  timelineDialog: document.getElementById('timelineDialog') as HTMLDialogElement,
+  timelineSummary: document.getElementById('timelineSummary') as HTMLElement,
+  timelineReplay: document.getElementById('timelineReplay') as HTMLElement,
+  timelineEvents: document.getElementById('timelineEvents') as HTMLElement,
+  showTimelineBtn: document.getElementById('showTimelineBtn') as HTMLButtonElement,
+  timelineCloseBtn: document.getElementById('timelineCloseBtn') as HTMLButtonElement,
   rawDialog: document.getElementById('rawSceneDialog') as HTMLDialogElement,
   rawOutput: document.getElementById('rawSceneOutput') as HTMLElement,
   showRawBtn: document.getElementById('showRawBtn') as HTMLButtonElement,
@@ -109,6 +123,7 @@ const state: {
   isSubmitting: boolean;
   isActionSubmitting: boolean;
   runSummary: RunSummary | null;
+  runTimeline: RunTimelineSnapshot | null;
   uiMode: UiMode;
   idleViewTimer: number | null;
   backendHealthy: boolean;
@@ -124,6 +139,7 @@ const state: {
   isSubmitting: false,
   isActionSubmitting: false,
   runSummary: null,
+  runTimeline: null,
   uiMode: 'kiosk',
   idleViewTimer: null,
   backendHealthy: true,
@@ -254,6 +270,19 @@ function extractRunSummary(raw: unknown): RunSummary | null {
   const summary = (candidate as { summary?: unknown }).summary;
   if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null;
   return summary as RunSummary;
+}
+
+function extractRunTimeline(raw: unknown): RunTimelineSnapshot | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const candidate = (raw as { run?: unknown }).run;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+  const run = candidate as { runId?: unknown; summary?: unknown; events?: unknown };
+  if (typeof run.runId !== 'string' || !Array.isArray(run.events)) return null;
+  return {
+    runId: run.runId,
+    summary: (run.summary && typeof run.summary === 'object' && !Array.isArray(run.summary)) ? run.summary as RunSummary : null,
+    events: run.events as CanonicalRunEvent[]
+  };
 }
 
 function collectSourceLabels(payload: A2UICompatiblePayload): string[] {
@@ -967,6 +996,7 @@ function syncRenderSurface(nodesToRender: unknown[]) {
 function renderA2ui(payload: unknown, source: string) {
   if (/local|offline|startup|profile-switch/.test(source) && source !== 'startup-profile' && source !== 'startup-lkg') {
     state.runSummary = null;
+    state.runTimeline = null;
   }
   const normalized = normalizeA2uiPayload(payload, state.renderState);
   if (!isSafePayload(normalized.payload)) throw new Error('Payload failed safety checks');
@@ -1006,6 +1036,103 @@ function renderA2ui(payload: unknown, source: string) {
   }
 
   setUiState('ready', `Screen ready. Showing ${nodesToRender.length} section${nodesToRender.length === 1 ? '' : 's'}.`);
+}
+
+function formatTimelineTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function renderRunTimeline(snapshot: RunTimelineSnapshot) {
+  const replay = replayRunEvents(snapshot.events);
+  const summary = snapshot.summary || replay.summary;
+  const title = replay.payload?.screen?.title || state.lastPayload?.screen?.title || 'No visible screen';
+  const transcriptPreview = replay.transcript.slice(-2);
+
+  els.timelineSummary.innerHTML = `
+    <div class="timeline-summary-grid">
+      <article class="timeline-stat-card">
+        <p class="label">Run</p>
+        <strong>${summary?.runId || snapshot.runId}</strong>
+        <p class="muted">${summary?.eventCount || snapshot.events.length} events · ${summary?.sourceLabel || 'Unknown source'}</p>
+      </article>
+      <article class="timeline-stat-card">
+        <p class="label">Status</p>
+        <strong>${summary?.latestStatus || replay.latestStatus || 'unknown'}</strong>
+        <p class="muted">${summary?.trust === 'untrusted' ? 'Manual review suggested' : 'Trusted path'}</p>
+      </article>
+      <article class="timeline-stat-card">
+        <p class="label">Visible outcome</p>
+        <strong>${title}</strong>
+        <p class="muted">${replay.interrupts.length} interrupts · ${replay.handoffs.length} handoffs · ${replay.approvals.length} approvals</p>
+      </article>
+    </div>
+  `;
+
+  els.timelineReplay.innerHTML = `
+    <article class="timeline-replay-card">
+      <div>
+        <p class="label">Replay snapshot</p>
+        <h4>${title}</h4>
+        <p class="muted">${replay.latestNarrative || 'No narrative text was captured for this run.'}</p>
+      </div>
+      <ul class="timeline-replay-list">
+        ${transcriptPreview.length ? transcriptPreview.map((text) => `<li>${text}</li>`).join('') : '<li>No narrative transcript chunks</li>'}
+      </ul>
+    </article>
+  `;
+
+  els.timelineEvents.innerHTML = snapshot.events.map((event) => {
+    const provenance = event.provenance
+      ? `${event.provenance.origin || 'unknown'} · ${event.provenance.tool || 'unknown tool'}`
+      : `${event.source.origin} · ${event.source.tool || event.source.label}`;
+    const detail = event.kind === 'text_chunk'
+      ? (event.text || event.summary)
+      : event.kind === 'ui_delta'
+        ? (event.ui?.messages?.find((message) => message.type === 'surfaceUpdate' && 'screen' in message)?.screen?.title || 'UI updated')
+        : event.kind === 'input_required'
+          ? (event.inputRequired?.reason || event.summary)
+          : event.kind === 'interrupted'
+            ? (event.interrupt?.reason || event.summary)
+            : event.summary;
+    return `
+      <article class="timeline-event-card trust-${event.trust}">
+        <div class="timeline-event-topline">
+          <span class="timeline-kind">${event.kind.replace(/_/g, ' ')}</span>
+          <span class="timeline-time">${formatTimelineTimestamp(event.timestamp)}</span>
+        </div>
+        <p class="timeline-event-detail">${detail}</p>
+        <div class="timeline-event-meta">
+          <span>${event.status || 'n/a'}</span>
+          <span>${provenance}</span>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+async function showRunTimeline() {
+  const snapshot = state.runTimeline;
+  const runId = snapshot?.runId || state.runSummary?.runId;
+  if (!runId) {
+    setUiState('error', 'No replayable run is available yet. Update the screen first.');
+    return;
+  }
+
+  try {
+    const response = await withTimeout(10000, fetch(`/a2ui/runs/${encodeURIComponent(runId)}`, { headers: { Accept: 'application/json' } }));
+    if (!response.ok) throw new Error(`Run timeline responded ${response.status}`);
+    const payload = await response.json();
+    const refreshed = extractRunTimeline(payload) || snapshot;
+    if (!refreshed) throw new Error('Timeline payload missing run events');
+    state.runTimeline = refreshed;
+    if (refreshed.summary) state.runSummary = refreshed.summary;
+    renderRunTimeline(refreshed);
+    els.timelineDialog.showModal();
+  } catch (error) {
+    setUiState('error', 'Run timeline is unavailable right now. Try again after the next refresh.');
+  }
 }
 
 function showRawPayload() {
@@ -1066,6 +1193,7 @@ function setBusyControls(isBusy: boolean) {
   els.submitBtn.disabled = isBusy;
   els.retryBtn.disabled = isBusy;
   els.openProfileManagerBtn.disabled = isBusy;
+  els.showTimelineBtn.disabled = isBusy;
   els.profileSelect.disabled = isBusy;
   els.saveProfileBtn.disabled = isBusy;
   els.renameProfileBtn.disabled = isBusy;
@@ -1115,13 +1243,15 @@ async function submitPrompt(prompt: string, source = 'prompt') {
       },
       onPartial: (partialPayload) => {
         try {
-          state.runSummary = extractRunSummary(partialPayload);
+          state.runTimeline = extractRunTimeline(partialPayload);
+          state.runSummary = state.runTimeline?.summary || extractRunSummary(partialPayload);
           renderA2ui(unwrapA2uiPayload(partialPayload), 'partial');
           setUiState('rendering', 'Got an early update. Finishing your full screen…');
         } catch { /* ignore partial render failures */ }
       }
     });
-    state.runSummary = extractRunSummary(payload);
+    state.runTimeline = extractRunTimeline(payload);
+    state.runSummary = state.runTimeline?.summary || extractRunSummary(payload);
     renderA2ui(unwrapA2uiPayload(payload), source);
   } catch (err) {
     state.lastError = err as Error;
@@ -1275,7 +1405,9 @@ function wire() {
           }
         });
 
-        const responseSummary = extractRunSummary(response);
+        const responseTimeline = extractRunTimeline(response);
+        const responseSummary = responseTimeline?.summary || extractRunSummary(response);
+        if (responseTimeline) state.runTimeline = responseTimeline;
         if (responseSummary) state.runSummary = responseSummary;
 
         const actionArtifact = unwrapA2uiPayload(response);
@@ -1340,6 +1472,13 @@ function wire() {
   els.profileManagerCloseBtn.addEventListener('click', () => {
     els.profileManagerDialog.close();
   });
+
+  els.showTimelineBtn.addEventListener('click', () => {
+    showRunTimeline().catch(() => {
+      setUiState('error', 'Run timeline is unavailable right now.');
+    });
+  });
+  els.timelineCloseBtn.addEventListener('click', () => els.timelineDialog.close());
 
   els.submitBtn.addEventListener('click', () => submitPrompt(els.promptInput.value, 'prompt'));
   els.promptInput.addEventListener('keydown', (event) => {

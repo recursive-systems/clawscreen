@@ -4,6 +4,9 @@ north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
   - date: 2026-03-10
+    change: Completed REL-003 deterministic run replay and timeline inspector with replay-derived visible state, provenance-rich event inspection, and a first-class admin UI entrypoint
+    rationale: ClawScreen can now reconstruct the visible screen from append-only run events, inspect narrative/UI/control flow without dumping raw JSON first, and make trust/provenance review part of the product instead of a backend-only artifact.
+  - date: 2026-03-10
     change: Completed INT-010 mixed text + UI normalization with server guardrails, frontend HUD composition, and action-aware artifact responses
     rationale: ClawScreen now normalizes sparse/mixed model output into a stable glanceable HUD, preserves actionable controls, and degrades safely instead of exposing brittle raw payload structure.
   - date: 2026-03-10
@@ -235,7 +238,8 @@ backlog:
     lane: reliability
     title: Deterministic run replay and timeline inspector
     priority: P2
-    status: ready
+    status: done
+    owner: clawscreen-product
     last_updated: 2026-03-10
     acceptance:
       - Reconstruct visible run state deterministically from append-only event history

@@ -66,7 +66,10 @@
         <div class="controls-row">
           <details class="advanced-tools">
             <summary>More options</summary>
-            <button id="showRawBtn" type="button">View details</button>
+            <div class="advanced-tool-actions">
+              <button id="showTimelineBtn" type="button">Run timeline</button>
+              <button id="showRawBtn" type="button">View details</button>
+            </div>
           </details>
         </div>
       </section>
@@ -97,6 +100,16 @@
         </select>
       </div>
       <div id="profileManagerTabs" class="profile-manager-tabs" role="tablist" aria-label="All saved screens"></div>
+    </dialog>
+
+    <dialog id="timelineDialog" class="raw-dialog timeline-dialog" aria-label="Run timeline inspector">
+      <div class="dialog-head">
+        <h3>Run timeline</h3>
+        <button id="timelineCloseBtn" type="button">Close</button>
+      </div>
+      <div id="timelineSummary" class="timeline-summary"></div>
+      <div id="timelineReplay" class="timeline-replay"></div>
+      <div id="timelineEvents" class="timeline-events"></div>
     </dialog>
 
     <dialog id="rawSceneDialog" class="raw-dialog">

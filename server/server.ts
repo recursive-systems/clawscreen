@@ -12,6 +12,7 @@ import {
   createRunId
 } from '../shared/canonicalRunEvent.js';
 import { coerceTrustedComponentType } from '../shared/trustedComponents.js';
+import { replayRunEvents } from '../shared/runReplay.js';
 import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
 import { createRunTimelineStore } from './runTimeline.js';
 import { applyGenerationGuardrails } from './generationGuardrails.js';
@@ -55,7 +56,8 @@ app.get('/a2ui/runs/:runId', (req: Request, res: Response) => {
   if (!runId) {
     return res.status(400).json({ ok: false, error: { code: 'bad_request', message: 'Missing runId' } });
   }
-  return res.json({ ok: true, run: runTimeline.getTimeline(runId) });
+  const run = runTimeline.getTimeline(runId);
+  return res.json({ ok: true, run, replay: replayRunEvents(run.events) });
 });
 
 app.post('/a2ui/generate', async (req: Request, res: Response) => {

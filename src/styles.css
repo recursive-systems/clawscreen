@@ -373,6 +373,12 @@ h1,
   margin-top: 0.45rem;
 }
 
+.advanced-tool-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 input,
 select,
 button {
@@ -1240,6 +1246,83 @@ pre {
   padding: 0.4rem 0.9rem;
 }
 
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.timeline-dialog {
+  width: min(94vw, 920px);
+}
+
+.timeline-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.timeline-stat-card,
+.timeline-replay-card,
+.timeline-event-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface-dim);
+  padding: 0.9rem 1rem;
+}
+
+.timeline-replay-card {
+  margin-bottom: var(--space-md);
+}
+
+.timeline-replay-card h4 {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-lg);
+}
+
+.timeline-replay-list,
+.timeline-events {
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-replay-list {
+  margin-top: 0.75rem;
+  padding-left: 1rem;
+}
+
+.timeline-events {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.timeline-event-card.trust-untrusted {
+  border-color: rgba(194, 80, 74, 0.35);
+  background: rgba(194, 80, 74, 0.06);
+}
+
+.timeline-event-topline,
+.timeline-event-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.timeline-kind {
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.timeline-event-detail {
+  margin: 0.45rem 0;
+}
+
+.timeline-event-meta {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
 /* ================================================================
    Animations
    ================================================================ */
@@ -1306,6 +1389,10 @@ pre {
   .size-medium,
   .size-large {
     grid-column: span 12;
+  }
+
+  .timeline-summary-grid {
+    grid-template-columns: 1fr;
   }
 
   .top-bar {
