@@ -70,6 +70,17 @@ type RunTimelineSnapshot = {
 
 type UiMode = 'kiosk' | 'admin';
 
+type PendingApproval = {
+  button: HTMLButtonElement;
+  actionPayload: Record<string, unknown>;
+  eventType: string;
+  eventTarget?: string;
+  previousLabel: string;
+  riskLabel: string;
+  riskReason: string;
+  conflictNote?: string;
+};
+
 const els = {
   app: document.getElementById('app') as HTMLElement,
   time: document.getElementById('timeDisplay') as HTMLElement,
@@ -102,6 +113,12 @@ const els = {
   rawOutput: document.getElementById('rawSceneOutput') as HTMLElement,
   showRawBtn: document.getElementById('showRawBtn') as HTMLButtonElement,
   rawCloseBtn: document.getElementById('rawCloseBtn') as HTMLButtonElement,
+  actionApprovalDialog: document.getElementById('actionApprovalDialog') as HTMLDialogElement,
+  actionApprovalBody: document.getElementById('actionApprovalBody') as HTMLElement,
+  actionApprovalCloseBtn: document.getElementById('actionApprovalCloseBtn') as HTMLButtonElement,
+  actionApprovalDeclineBtn: document.getElementById('actionApprovalDeclineBtn') as HTMLButtonElement,
+  actionApprovalPauseBtn: document.getElementById('actionApprovalPauseBtn') as HTMLButtonElement,
+  actionApprovalConfirmBtn: document.getElementById('actionApprovalConfirmBtn') as HTMLButtonElement,
   statusPill: document.getElementById('statusPill') as HTMLElement,
   statusTitle: document.getElementById('statusTitle') as HTMLElement,
   statusInfo: document.getElementById('statusInfo') as HTMLElement,
@@ -128,6 +145,7 @@ const state: {
   idleViewTimer: number | null;
   backendHealthy: boolean;
   healthPollTimer: number | null;
+  pendingApproval: PendingApproval | null;
 } = {
   lastPrompt: 'Show me everything I need before leaving in 20 minutes.',
   lastPayload: null,
@@ -143,7 +161,8 @@ const state: {
   uiMode: 'kiosk',
   idleViewTimer: null,
   backendHealthy: true,
-  healthPollTimer: null
+  healthPollTimer: null,
+  pendingApproval: null
 };
 
 const offlineFallbackPayload: A2UICompatiblePayload = {
@@ -738,6 +757,178 @@ function sanitizeActionEventType(value: unknown): string {
 function sanitizeActionTarget(value: unknown): string | undefined {
   const target = String(value || '').trim().slice(0, 200);
   return target || undefined;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function describeActionRisk(actionPayload: Record<string, unknown>, button: HTMLButtonElement, eventType: string, eventTarget?: string) {
+  const joined = [
+    eventType,
+    eventTarget,
+    actionPayload.type,
+    actionPayload.kind,
+    actionPayload.intent,
+    actionPayload.target,
+    button.textContent,
+    button.getAttribute('aria-label')
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+
+  const destructive = /(delete|remove|destroy|wipe|erase|revoke|disconnect)/.test(joined);
+  const auth = /(auth|login|signin|password|passkey|mfa|otp)/.test(joined);
+  const purchase = /(purchase|buy|checkout|payment|pay|submit order|book now)/.test(joined);
+  const submit = /(submit|send|publish|post|transfer|approve|confirm)/.test(joined);
+  const untrusted = state.runSummary?.trust === 'untrusted';
+
+  let riskLabel = '';
+  let riskReason = '';
+
+  if (destructive) {
+    riskLabel = 'Destructive action';
+    riskReason = 'This may remove data or disconnect something important.';
+  } else if (purchase) {
+    riskLabel = 'Purchase or payment';
+    riskReason = 'This may spend money or place an irreversible order.';
+  } else if (auth) {
+    riskLabel = 'Authentication step';
+    riskReason = 'This may expose credentials or hand control into a sensitive session.';
+  } else if (submit) {
+    riskLabel = 'High-impact submit';
+    riskReason = 'This may send, approve, or publish something externally.';
+  }
+
+  if (!riskLabel && !untrusted) return null;
+
+  const prompt = state.lastPrompt.trim();
+  const actionLabel = button.textContent?.trim() || eventType;
+  const conflictNote = untrusted
+    ? `The current screen is marked untrusted, so its instruction to “${actionLabel}” should be checked against your original ask${prompt ? `: “${prompt}”` : ''}.`
+    : prompt
+      ? `Confirm that “${actionLabel}” still matches your original ask: “${prompt}”.`
+      : undefined;
+
+  return {
+    requiresConfirmation: Boolean(riskLabel || untrusted),
+    riskLabel: riskLabel || 'Untrusted instruction',
+    riskReason: riskReason || 'This instruction came from an untrusted screen, so it should be reviewed before continuing.',
+    conflictNote
+  };
+}
+
+async function performActionRequest(
+  actionButton: HTMLButtonElement,
+  previousLabel: string,
+  eventType: string,
+  actionPayload: Record<string, unknown>,
+  eventTarget?: string,
+  overrides?: { control?: Record<string, unknown>; payload?: Record<string, unknown>; progressMessage?: string }
+) {
+  const loadingLabel = actionButton.getAttribute('aria-busy') === 'true' ? previousLabel : 'Working…';
+  state.isActionSubmitting = true;
+  actionButton.disabled = true;
+  actionButton.setAttribute('aria-busy', 'true');
+  actionButton.textContent = loadingLabel;
+  setUiState('thinking', overrides?.progressMessage || 'Running action…');
+
+  const eventId = `evt_ui_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  try {
+    const response = await dispatchA2uiAction({
+      version: state.renderState.version || '0.9',
+      event: {
+        id: eventId,
+        type: eventType,
+        timestamp: nowIso(),
+        ...(eventTarget ? { target: eventTarget } : {}),
+        payload: overrides?.payload || actionPayload,
+        snapshot: {
+          screen: (state.renderState.screen || {}) as unknown,
+          model: state.renderState.model as unknown
+        },
+        provenance: {
+          origin: 'user',
+          tool: 'clawscreen.ui',
+          timestamp: nowIso()
+        }
+      },
+      ...(overrides?.control ? { control: overrides.control } : {})
+    });
+
+    const responseTimeline = extractRunTimeline(response);
+    const responseSummary = responseTimeline?.summary || extractRunSummary(response);
+    if (responseTimeline) state.runTimeline = responseTimeline;
+    if (responseSummary) state.runSummary = responseSummary;
+
+    const actionArtifact = unwrapA2uiPayload(response);
+    const responseTask = response && typeof response === 'object' && !Array.isArray(response) && 'task' in response
+      ? (response as { task?: { status?: string; progress_message?: string; input_required?: { reason?: string } } }).task
+      : undefined;
+    if (response && typeof response === 'object' && !Array.isArray(response) && 'a2ui' in response) {
+      renderA2ui(actionArtifact, 'action');
+    } else {
+      renderA2ui({
+        version: state.renderState.version || '0.9',
+        screen: {
+          title: responseTask?.status === 'paused' ? 'Action paused' : responseTask?.status === 'input_required' ? 'Human review required' : 'Action updated',
+          subtitle: responseTask?.progress_message || 'Status changed',
+          blocks: [
+            {
+              type: 'notes',
+              title: 'What happened',
+              body: responseTask?.input_required?.reason || responseTask?.progress_message || 'The task state changed without a new screen artifact.'
+            },
+            {
+              type: 'card',
+              title: 'Next step',
+              body: responseTask?.status === 'paused' ? 'Resume when you are ready.' : 'Review the timeline for the full receipt.'
+            }
+          ]
+        }
+      }, 'action-status');
+    }
+  } catch {
+    setUiState('error', 'Action could not be completed right now. Please try again.');
+  } finally {
+    state.isActionSubmitting = false;
+    actionButton.disabled = false;
+    actionButton.removeAttribute('aria-busy');
+    actionButton.textContent = previousLabel;
+  }
+}
+
+function openApprovalDialog(pending: PendingApproval) {
+  state.pendingApproval = pending;
+  els.actionApprovalBody.innerHTML = `
+    <div class="approval-panel trust-${state.runSummary?.trust || 'trusted'}">
+      <p class="approval-pill">${escapeHtml(pending.riskLabel)}</p>
+      <h4>${escapeHtml(pending.previousLabel)}</h4>
+      <p>${escapeHtml(pending.riskReason)}</p>
+      <div class="approval-grid">
+        <article>
+          <p class="label">You asked</p>
+          <p>${escapeHtml(state.lastPrompt || 'No user prompt captured')}</p>
+        </article>
+        <article>
+          <p class="label">The screen is asking to do</p>
+          <p>${escapeHtml(pending.previousLabel)}${pending.eventTarget ? ` · ${escapeHtml(pending.eventTarget)}` : ''}</p>
+        </article>
+      </div>
+      ${pending.conflictNote ? `<p class="approval-warning">${escapeHtml(pending.conflictNote)}</p>` : ''}
+      <p class="muted">Sensitive actions are logged into the run timeline with your decision.</p>
+    </div>
+  `;
+  els.actionApprovalDialog.showModal();
+}
+
+function closeApprovalDialog() {
+  state.pendingApproval = null;
+  if (els.actionApprovalDialog.open) els.actionApprovalDialog.close();
 }
 
 function normalizeA2uiPayload(
@@ -1373,53 +1564,25 @@ function wire() {
       }
 
       const previousLabel = actionButton.textContent || 'Run';
-      const loadingLabel = actionButton.getAttribute('aria-busy') === 'true' ? previousLabel : 'Working…';
-      state.isActionSubmitting = true;
-      actionButton.disabled = true;
-      actionButton.setAttribute('aria-busy', 'true');
-      actionButton.textContent = loadingLabel;
-      setUiState('thinking', 'Running action…');
-
       const eventType = sanitizeActionEventType(actionButton.dataset.actionType || actionPayload.type || actionPayload.kind);
       const eventTarget = sanitizeActionTarget(actionButton.dataset.actionTarget || actionPayload.target);
-      const eventId = `evt_ui_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const risk = describeActionRisk(actionPayload, actionButton, eventType, eventTarget);
 
-      try {
-        const response = await dispatchA2uiAction({
-          version: state.renderState.version || '0.9',
-          event: {
-            id: eventId,
-            type: eventType,
-            timestamp: nowIso(),
-            ...(eventTarget ? { target: eventTarget } : {}),
-            payload: actionPayload,
-            snapshot: {
-              screen: (state.renderState.screen || {}) as unknown,
-              model: state.renderState.model as unknown
-            },
-            provenance: {
-              origin: 'user',
-              tool: 'clawscreen.ui',
-              timestamp: nowIso()
-            }
-          }
+      if (risk?.requiresConfirmation) {
+        openApprovalDialog({
+          button: actionButton,
+          actionPayload,
+          eventType,
+          eventTarget,
+          previousLabel,
+          riskLabel: risk.riskLabel,
+          riskReason: risk.riskReason,
+          conflictNote: risk.conflictNote
         });
-
-        const responseTimeline = extractRunTimeline(response);
-        const responseSummary = responseTimeline?.summary || extractRunSummary(response);
-        if (responseTimeline) state.runTimeline = responseTimeline;
-        if (responseSummary) state.runSummary = responseSummary;
-
-        const actionArtifact = unwrapA2uiPayload(response);
-        renderA2ui(actionArtifact, 'action');
-      } catch (err) {
-        setUiState('error', `Action could not be completed right now. Please try again.`);
-      } finally {
-        state.isActionSubmitting = false;
-        actionButton.disabled = false;
-        actionButton.removeAttribute('aria-busy');
-        actionButton.textContent = previousLabel;
+        return;
       }
+
+      await performActionRequest(actionButton, previousLabel, eventType, actionPayload, eventTarget);
     }
   });
 
@@ -1479,6 +1642,73 @@ function wire() {
     });
   });
   els.timelineCloseBtn.addEventListener('click', () => els.timelineDialog.close());
+  els.actionApprovalCloseBtn.addEventListener('click', closeApprovalDialog);
+  els.actionApprovalDeclineBtn.addEventListener('click', async () => {
+    const pending = state.pendingApproval;
+    closeApprovalDialog();
+    if (!pending) return;
+    await performActionRequest(
+      pending.button,
+      pending.previousLabel,
+      pending.eventType,
+      {
+        ...pending.actionPayload,
+        safety: {
+          confirmation: { decision: 'declined', reason: 'user_cancelled_before_submit' },
+          conflictNote: pending.conflictNote || pending.riskReason
+        }
+      },
+      pending.eventTarget,
+      {
+        control: { signal: 'takeover', takeover_reason: 'user_declined_high_impact_action' },
+        progressMessage: 'Action canceled. Waiting for human decision.'
+      }
+    );
+  });
+  els.actionApprovalPauseBtn.addEventListener('click', async () => {
+    const pending = state.pendingApproval;
+    closeApprovalDialog();
+    if (!pending) return;
+    await performActionRequest(
+      pending.button,
+      pending.previousLabel,
+      pending.eventType,
+      {
+        ...pending.actionPayload,
+        safety: {
+          confirmation: { decision: 'paused', reason: 'user_requested_pause_for_review' },
+          conflictNote: pending.conflictNote || pending.riskReason
+        }
+      },
+      pending.eventTarget,
+      {
+        control: { signal: 'pause' },
+        progressMessage: 'Action paused for review.'
+      }
+    );
+  });
+  els.actionApprovalConfirmBtn.addEventListener('click', async () => {
+    const pending = state.pendingApproval;
+    closeApprovalDialog();
+    if (!pending) return;
+    await performActionRequest(
+      pending.button,
+      pending.previousLabel,
+      pending.eventType,
+      {
+        ...pending.actionPayload,
+        safety: {
+          confirmation: { decision: 'approved', reason: 'user_confirmed_after_review' },
+          conflictNote: pending.conflictNote || pending.riskReason,
+          userIntent: state.lastPrompt || ''
+        }
+      },
+      pending.eventTarget,
+      {
+        progressMessage: 'Confirmed. Running high-impact action…'
+      }
+    );
+  });
 
   els.submitBtn.addEventListener('click', () => submitPrompt(els.promptInput.value, 'prompt'));
   els.promptInput.addEventListener('keydown', (event) => {

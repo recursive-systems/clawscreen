@@ -289,7 +289,8 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
     runId,
     response: terminal,
     capabilities: advertisedCapabilities,
-    provenance
+    provenance,
+    actionEvent: event
   }));
 
   if (!wantsStream) {
@@ -306,9 +307,9 @@ app.post('/a2ui/action', async (req: Request, res: Response) => {
     res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  sendEvent('task', { ...queued, run: runTimeline.appendMany(runId, canonicalEventsFromActionResponse({ runId, response: queued, capabilities: advertisedCapabilities, provenance })) });
+  sendEvent('task', { ...queued, run: runTimeline.appendMany(runId, canonicalEventsFromActionResponse({ runId, response: queued, capabilities: advertisedCapabilities, provenance, actionEvent: event })) });
   await sleep(250);
-  sendEvent('task', { ...running, run: runTimeline.appendMany(runId, canonicalEventsFromActionResponse({ runId, response: running, capabilities: advertisedCapabilities, provenance })) });
+  sendEvent('task', { ...running, run: runTimeline.appendMany(runId, canonicalEventsFromActionResponse({ runId, response: running, capabilities: advertisedCapabilities, provenance, actionEvent: event })) });
   await sleep(250);
   sendEvent('task', { ...terminal, run });
   res.end();

@@ -179,6 +179,39 @@ test('button action accepts snapshot model and responds with processed artifact'
   assert.equal(payload.task.artifact.messages[1].screen.title, 'Action processed');
 });
 
+test('high-impact action logs confirmation receipt in run timeline', async () => {
+  const res = await fetch(`${base}/a2ui/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      version: '0.9',
+      event: {
+        id: 'evt_delete_confirmed',
+        type: 'button.click',
+        target: '#delete-account',
+        timestamp: new Date().toISOString(),
+        payload: {
+          type: 'account.delete',
+          target: 'account',
+          safety: {
+            confirmation: {
+              decision: 'approved',
+              reason: 'user_confirmed_after_review'
+            },
+            conflictNote: 'Screen requested account deletion; user intent was reviewed before continuing.'
+          }
+        }
+      }
+    })
+  });
+
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  const confirmationEvent = payload.run.events.find((event: any) => event.kind === 'text_chunk' && /Human confirmed high-impact action/i.test(event.summary));
+  assert.ok(confirmationEvent);
+  assert.match(confirmationEvent.text, /user intent was reviewed/i);
+});
+
 test('button action refresh.request returns refresh-specific artifact', async () => {
   const res = await fetch(`${base}/a2ui/action`, {
     method: 'POST',

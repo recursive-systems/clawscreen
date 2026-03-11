@@ -3,6 +3,9 @@ product: ClawScreen
 north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
+  - date: 2026-03-11
+    change: Completed TRUST-003 prompt-injection and high-impact action confirmation rail with user review dialog, pause/cancel/continue controls, and timeline receipts for approval decisions
+    rationale: ClawScreen now distinguishes sensitive or untrusted screen-triggered actions before execution, gives the human a clear review checkpoint, and preserves approval/conflict context in the run timeline instead of treating trust decisions as invisible UI state.
   - date: 2026-03-10
     change: Completed REL-003 deterministic run replay and timeline inspector with replay-derived visible state, provenance-rich event inspection, and a first-class admin UI entrypoint
     rationale: ClawScreen can now reconstruct the visible screen from append-only run events, inspect narrative/UI/control flow without dumping raw JSON first, and make trust/provenance review part of the product instead of a backend-only artifact.
@@ -251,8 +254,9 @@ backlog:
     lane: trust_ux
     title: Prompt-injection and high-impact action confirmation rail
     priority: P1
-    status: ready
-    last_updated: 2026-03-07
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-11
     acceptance:
       - Flag untrusted on-screen instructions distinctly from user-authored intent
       - Require explicit user confirmation for high-impact actions (submit/purchase/delete/auth)

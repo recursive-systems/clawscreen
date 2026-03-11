@@ -132,11 +132,23 @@ export function canonicalEventsFromActionResponse(args: {
   trust?: RunEventTrust;
   capabilities?: CanonicalRunCapabilities;
   provenance?: A2UIActionProvenance;
+  actionEvent?: { type?: string; target?: string; payload?: unknown };
 }): CanonicalRunEvent[] {
   const { runId, response } = args;
   const trust = args.trust || 'trusted';
   const source = args.source || { channel: 'action', label: 'Action API', origin: 'agent', tool: 'a2ui.action' };
   const timestamp = new Date().toISOString();
+  const actionPayload = args.actionEvent?.payload && typeof args.actionEvent.payload === 'object' && !Array.isArray(args.actionEvent.payload)
+    ? args.actionEvent.payload as Record<string, unknown>
+    : null;
+  const confirmation = actionPayload && typeof actionPayload.safety === 'object' && actionPayload.safety && typeof (actionPayload.safety as Record<string, unknown>).confirmation === 'object'
+    ? (actionPayload.safety as Record<string, unknown>).confirmation as Record<string, unknown>
+    : null;
+  const confirmationDecision = typeof confirmation?.decision === 'string' ? confirmation.decision : '';
+  const confirmationReason = typeof confirmation?.reason === 'string' ? confirmation.reason : '';
+  const safetyConflict = actionPayload && typeof actionPayload.safety === 'object' && actionPayload.safety && typeof (actionPayload.safety as Record<string, unknown>).conflictNote === 'string'
+    ? String((actionPayload.safety as Record<string, unknown>).conflictNote)
+    : '';
   const events: CanonicalRunEvent[] = [
     createCanonicalRunEvent({
       runId,
@@ -173,6 +185,24 @@ export function canonicalEventsFromActionResponse(args: {
       status: 'input_required',
       inputRequired: response.task.input_required,
       provenance: args.provenance
+    }));
+  }
+
+  if (confirmationDecision) {
+    const confirmationSummary = confirmationDecision === 'approved'
+      ? `Human confirmed high-impact action${confirmationReason ? `: ${confirmationReason}` : ''}`
+      : `High-impact action ${confirmationDecision}${confirmationReason ? `: ${confirmationReason}` : ''}`;
+    events.push(createCanonicalRunEvent({
+      runId,
+      timestamp,
+      kind: 'text_chunk',
+      trust,
+      source,
+      summary: confirmationSummary,
+      status: response.task.status,
+      text: safetyConflict ? `${confirmationSummary}. ${safetyConflict}` : confirmationSummary,
+      provenance: args.provenance,
+      payload: { confirmationDecision, confirmationReason, safetyConflict }
     }));
   }
 

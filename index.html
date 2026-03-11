@@ -75,6 +75,19 @@
       </section>
     </div>
 
+    <dialog id="actionApprovalDialog" class="raw-dialog approval-dialog" aria-label="Confirm high-impact action">
+      <div class="dialog-head">
+        <h3>Confirm action</h3>
+        <button id="actionApprovalCloseBtn" type="button">Close</button>
+      </div>
+      <div id="actionApprovalBody" class="approval-body"></div>
+      <div class="approval-actions">
+        <button id="actionApprovalDeclineBtn" type="button" class="secondary-action">Cancel</button>
+        <button id="actionApprovalPauseBtn" type="button">Pause instead</button>
+        <button id="actionApprovalConfirmBtn" type="button">Continue</button>
+      </div>
+    </dialog>
+
     <dialog id="profileManagerDialog" class="profile-dialog" aria-label="Manage saved screens">
       <div class="dialog-head">
         <h3>Manage saved screens</h3>
