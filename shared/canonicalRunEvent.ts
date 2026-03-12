@@ -18,6 +18,9 @@ export type RunEventKind =
   | 'input_required'
   | 'interrupted'
   | 'resumed'
+  | 'authority_transfer'
+  | 'downgrade'
+  | 'action_executed'
   | 'completed'
   | 'errored'
   | 'handoff_requested';
@@ -36,6 +39,21 @@ export type CanonicalRunCapabilities = {
   screenshot: boolean;
   payloadLimitKb?: number;
   messageTypes?: string[];
+};
+
+export type AuthorityApprovalState = 'not_required' | 'required' | 'approved' | 'declined' | 'paused';
+export type AuthorityDecision = 'accepted' | 'rejected' | 'downgraded' | 'transferred';
+
+export type AuthorityMetadata = {
+  ownerId: string;
+  ownerType: 'user' | 'agent' | 'system' | 'remote' | 'unknown';
+  sourceKind: string;
+  trustLevel: RunEventTrust;
+  approvalState: AuthorityApprovalState;
+  capabilitySnapshot?: CanonicalRunCapabilities;
+  decision?: AuthorityDecision;
+  reason?: string;
+  surfaceId?: string;
 };
 
 export type CanonicalRunEvent = {
@@ -58,6 +76,7 @@ export type CanonicalRunEvent = {
   resume?: A2UIResumeContext;
   error?: { code: string; message: string };
   payload?: unknown;
+  authority?: AuthorityMetadata;
 };
 
 export type CanonicalRunSummary = {

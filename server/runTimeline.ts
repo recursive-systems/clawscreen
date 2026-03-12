@@ -1,5 +1,6 @@
 import type { CanonicalRunEvent, CanonicalRunSummary } from '../shared/canonicalRunEvent.js';
 import { summarizeRun } from '../shared/canonicalRunEvent.js';
+import { createRunAuthorityStore } from './runAuthority.js';
 
 export type RunTimelineSnapshot = {
   runId: string;
@@ -9,9 +10,11 @@ export type RunTimelineSnapshot = {
 
 export function createRunTimelineStore(maxEventsPerRun = 24) {
   const store = new Map<string, CanonicalRunEvent[]>();
+  const authority = createRunAuthorityStore();
 
   const append = (runId: string, event: CanonicalRunEvent): RunTimelineSnapshot => {
-    const next = [...(store.get(runId) || []), event].slice(-maxEventsPerRun);
+    const governedEvents = authority.applyEvent(runId, event);
+    const next = [...(store.get(runId) || []), ...governedEvents].slice(-maxEventsPerRun);
     store.set(runId, next);
     return { runId, events: next, summary: summarizeRun(next) };
   };

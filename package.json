@@ -17,8 +17,8 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
-    "start": "node dist/server/server.js",
+    "build:server": "rm -rf dist/server && tsc -p tsconfig.server.json",
+    "start": "node dist/server/server/server.js",
     "test:curl": "curl -sS -X POST http://127.0.0.1:18841/a2ui/generate -H 'Content-Type: application/json' -d '{\"prompt\":\"Show me my top 3 priorities today\"}' | jq ."
   },
   "dependencies": {

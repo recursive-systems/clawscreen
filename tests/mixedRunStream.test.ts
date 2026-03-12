@@ -56,5 +56,6 @@ test('generate result can emit replayable mixed text + ui timeline events in sou
   assert.match(events[5]?.text || '', /Final narrative wrap-up/);
 
   const replay = createRunTimelineStore(16).appendMany('run_mixed', events);
-  assert.deepEqual(replay.events.map((event) => event.kind), events.map((event) => event.kind));
+  assert.deepEqual(replay.events.map((event) => event.kind), ['run_started', 'text_chunk', 'authority_transfer', 'ui_delta', 'text_chunk', 'ui_delta', 'text_chunk', 'completed']);
+  assert.equal(replay.events.find((event) => event.kind === 'authority_transfer')?.authority?.decision, 'transferred');
 });
