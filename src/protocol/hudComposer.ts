@@ -1,9 +1,26 @@
 import { A2UIBlock, A2UICompatiblePayload, JsonValue } from '../../shared/a2ui';
 
+type ActionAssistContext = {
+  taskId?: string;
+  status?: string;
+  label?: string;
+  target?: string;
+  timestamp?: string;
+  interruptId?: string;
+  resumeToken?: string;
+  provenance?: {
+    origin?: string;
+    tool?: string;
+    confidence?: number;
+    timestamp?: string;
+  };
+};
+
 type HudComposeContext = {
   prompt?: string;
   trust?: 'trusted' | 'untrusted';
   eventCount?: number;
+  actionAssist?: ActionAssistContext | null;
 };
 
 const asArray = <T>(value: T | T[] | null | undefined): T[] => (Array.isArray(value) ? value : value == null ? [] : [value]);
@@ -213,6 +230,98 @@ function deriveMetrics(ctx: HudComposeContext, alertsCount: number): A2UIBlock[]
   ];
 }
 
+function formatActionStatus(status?: string): string {
+  const normalized = compactText(toText(status || ''), 40).toLowerCase();
+  if (!normalized) return 'Recent action';
+  return normalized.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function deriveActionAssistBlocks(ctx: HudComposeContext): A2UIBlock[] {
+  const assist = ctx.actionAssist;
+  if (!assist) return [];
+
+  const provenance = assist.provenance || {};
+  const detailItems = [
+    assist.label ? `Action: ${assist.label}` : '',
+    assist.target ? `Target: ${assist.target}` : '',
+    assist.status ? `Status: ${formatActionStatus(assist.status)}` : '',
+    provenance.origin ? `Initiator: ${provenance.origin}` : '',
+    provenance.tool ? `Source: ${provenance.tool}` : '',
+    typeof provenance.confidence === 'number' ? `Confidence: ${provenance.confidence.toFixed(2)}` : '',
+    assist.timestamp || provenance.timestamp ? `Timestamp: ${assist.timestamp || provenance.timestamp}` : ''
+  ].filter(Boolean);
+
+  const controls: A2UIBlock[] = [];
+  if (assist.status && ['queued', 'running', 'input_required'].includes(assist.status)) {
+    controls.push({
+      type: 'button',
+      label: 'Pause task',
+      variant: 'secondary',
+      action: {
+        type: 'task.control',
+        target: assist.taskId || 'current_task',
+        intent: 'pause_task',
+        control: { signal: 'pause' }
+      }
+    });
+  }
+
+  if (assist.status === 'paused' || assist.status === 'input_required') {
+    if (assist.interruptId || assist.resumeToken) {
+      controls.push({
+        type: 'button',
+        label: 'Resume task',
+        variant: 'primary',
+        action: {
+          type: 'task.resume',
+          target: assist.taskId || 'current_task',
+          intent: 'resume_task',
+          control: { signal: 'resume' },
+          resume: {
+            ...(assist.interruptId ? { interrupt_id: assist.interruptId } : {}),
+            ...(assist.resumeToken ? { resume_token: assist.resumeToken } : {})
+          }
+        }
+      });
+    }
+
+    controls.push({
+      type: 'button',
+      label: 'Take over manually',
+      variant: 'destructive',
+      action: {
+        type: 'task.control',
+        target: assist.taskId || 'current_task',
+        intent: 'manual_takeover',
+        control: { signal: 'takeover', takeover_reason: 'manual_review_requested_from_hud' }
+      }
+    });
+  }
+
+  if (!detailItems.length && !controls.length) return [];
+
+  const blocks: A2UIBlock[] = [];
+  if (detailItems.length) {
+    blocks.push({
+      type: 'list',
+      size: 'medium',
+      title: 'Action provenance',
+      items: detailItems
+    });
+  }
+
+  if (controls.length) {
+    blocks.push({
+      type: 'section',
+      size: 'large',
+      title: 'Human controls',
+      children: controls as unknown as JsonValue[]
+    });
+  }
+
+  return blocks;
+}
+
 export function composeHudPayload(payload: A2UICompatiblePayload, ctx: HudComposeContext = {}): A2UICompatiblePayload {
   const record = asRecord(payload);
   const screen = asRecord(record.screen);
@@ -227,6 +336,7 @@ export function composeHudPayload(payload: A2UICompatiblePayload, ctx: HudCompos
   const alerts = deriveAlerts(sourceBlocks, trust);
   const quickActions = deriveQuickActions(sourceBlocks);
   const metrics = deriveMetrics(ctx, alerts[0]?.includes('No critical alerts') ? 0 : alerts.length);
+  const actionAssistBlocks = deriveActionAssistBlocks(ctx);
 
   const imageBlock = sourceBlocks.find((block) => toText(block.type).toLowerCase() === 'image');
 
@@ -260,6 +370,7 @@ export function composeHudPayload(payload: A2UICompatiblePayload, ctx: HudCompos
       size: 'large',
       children: metrics as unknown as JsonValue[]
     },
+    ...actionAssistBlocks,
     {
       type: 'section',
       size: 'large',

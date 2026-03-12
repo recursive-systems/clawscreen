@@ -81,6 +81,22 @@ type PendingApproval = {
   conflictNote?: string;
 };
 
+type ActionAssistContext = {
+  taskId?: string;
+  status?: string;
+  label?: string;
+  target?: string;
+  timestamp?: string;
+  interruptId?: string;
+  resumeToken?: string;
+  provenance?: {
+    origin?: string;
+    tool?: string;
+    confidence?: number;
+    timestamp?: string;
+  };
+};
+
 const els = {
   app: document.getElementById('app') as HTMLElement,
   time: document.getElementById('timeDisplay') as HTMLElement,
@@ -827,7 +843,7 @@ async function performActionRequest(
   eventType: string,
   actionPayload: Record<string, unknown>,
   eventTarget?: string,
-  overrides?: { control?: Record<string, unknown>; payload?: Record<string, unknown>; progressMessage?: string }
+  overrides?: { control?: Record<string, unknown>; resume?: Record<string, unknown>; payload?: Record<string, unknown>; progressMessage?: string }
 ) {
   const loadingLabel = actionButton.getAttribute('aria-busy') === 'true' ? previousLabel : 'Working…';
   state.isActionSubmitting = true;
@@ -857,7 +873,8 @@ async function performActionRequest(
           timestamp: nowIso()
         }
       },
-      ...(overrides?.control ? { control: overrides.control } : {})
+      ...(overrides?.control ? { control: overrides.control } : {}),
+      ...(overrides?.resume ? { resume: overrides.resume } : {})
     });
 
     const responseTimeline = extractRunTimeline(response);
@@ -929,6 +946,46 @@ function openApprovalDialog(pending: PendingApproval) {
 function closeApprovalDialog() {
   state.pendingApproval = null;
   if (els.actionApprovalDialog.open) els.actionApprovalDialog.close();
+}
+
+function extractActionAssistContext(snapshot: RunTimelineSnapshot | null, summary: RunSummary | null): ActionAssistContext | null {
+  const events = snapshot?.events || [];
+  const latestActionEvent = [...events].reverse().find((event) => event.source.channel === 'action');
+  if (!latestActionEvent && !summary) return null;
+
+  const latestUiDelta = [...events].reverse().find((event) => event.source.channel === 'action' && event.kind === 'ui_delta');
+  const inputRequired = [...events].reverse().find((event) => event.source.channel === 'action' && event.kind === 'input_required');
+  const resumed = [...events].reverse().find((event) => event.source.channel === 'action' && event.kind === 'resumed');
+  const interrupted = [...events].reverse().find((event) => event.source.channel === 'action' && event.kind === 'interrupted');
+
+  const payload = latestActionEvent?.payload && typeof latestActionEvent.payload === 'object' && !Array.isArray(latestActionEvent.payload)
+    ? latestActionEvent.payload as Record<string, unknown>
+    : {};
+
+  const resumePayload = resumed?.resume || inputRequired?.inputRequired;
+  return {
+    taskId: latestUiDelta?.surfaceId || summary?.runId,
+    status: summary?.latestStatus || latestActionEvent?.status,
+    label: latestActionEvent?.summary || latestActionEvent?.kind,
+    target: typeof payload.target === 'string' ? payload.target : latestUiDelta?.surfaceId,
+    timestamp: latestActionEvent?.timestamp || summary?.updatedAt,
+    interruptId: interrupted?.interrupt?.id || resumed?.resume?.interrupt_id,
+    resumeToken: resumed?.resume?.resume_token || inputRequired?.inputRequired?.resume_token,
+    provenance: latestActionEvent?.provenance
+      ? {
+          origin: latestActionEvent.provenance.origin,
+          tool: latestActionEvent.provenance.tool,
+          confidence: latestActionEvent.provenance.confidence,
+          timestamp: latestActionEvent.provenance.timestamp
+        }
+      : latestActionEvent
+        ? {
+            origin: latestActionEvent.source.origin,
+            tool: latestActionEvent.source.tool,
+            timestamp: latestActionEvent.timestamp
+          }
+        : undefined
+  };
 }
 
 function normalizeA2uiPayload(
@@ -1196,7 +1253,8 @@ function renderA2ui(payload: unknown, source: string) {
   const composedPayload = composeHudPayload(normalized.payload, {
     prompt: state.lastPrompt,
     trust: state.runSummary?.trust || 'trusted',
-    eventCount: state.runSummary?.eventCount
+    eventCount: state.runSummary?.eventCount,
+    actionAssist: extractActionAssistContext(state.runTimeline, state.runSummary)
   });
 
   const screen = composedPayload.screen || {};
@@ -1566,7 +1624,12 @@ function wire() {
       const previousLabel = actionButton.textContent || 'Run';
       const eventType = sanitizeActionEventType(actionButton.dataset.actionType || actionPayload.type || actionPayload.kind);
       const eventTarget = sanitizeActionTarget(actionButton.dataset.actionTarget || actionPayload.target);
-      const risk = describeActionRisk(actionPayload, actionButton, eventType, eventTarget);
+      const controlOverride = isRecord(actionPayload.control) ? actionPayload.control : undefined;
+      const resumeOverride = isRecord(actionPayload.resume) ? actionPayload.resume : undefined;
+      const payloadWithoutOverrides = { ...actionPayload };
+      delete payloadWithoutOverrides.control;
+      delete payloadWithoutOverrides.resume;
+      const risk = controlOverride ? null : describeActionRisk(actionPayload, actionButton, eventType, eventTarget);
 
       if (risk?.requiresConfirmation) {
         openApprovalDialog({
@@ -1582,7 +1645,10 @@ function wire() {
         return;
       }
 
-      await performActionRequest(actionButton, previousLabel, eventType, actionPayload, eventTarget);
+      await performActionRequest(actionButton, previousLabel, eventType, payloadWithoutOverrides, eventTarget, {
+        ...(controlOverride ? { control: controlOverride } : {}),
+        ...(resumeOverride ? { resume: resumeOverride } : {})
+      });
     }
   });
 

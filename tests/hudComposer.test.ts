@@ -64,3 +64,52 @@ test('composeHudPayload preserves actionable buttons from source payload', () =>
   const items = Array.isArray(alerts?.items) ? alerts.items.map((item) => String(item)) : [];
   assert.equal(items.some((item) => /trust warning/i.test(item)), true);
 });
+
+test('composeHudPayload surfaces action provenance and live human controls for active tasks', () => {
+  const payload = composeHudPayload(
+    {
+      version: '0.9',
+      screen: {
+        title: 'Ops',
+        blocks: [{ type: 'card', title: 'Queue', body: 'One approval is waiting.' }]
+      }
+    },
+    {
+      trust: 'trusted',
+      eventCount: 7,
+      actionAssist: {
+        taskId: 'task_42',
+        status: 'input_required',
+        label: 'Authentication required',
+        target: 'billing_portal',
+        timestamp: '2026-03-12T20:35:00.000Z',
+        interruptId: 'interrupt_42',
+        resumeToken: 'resume_42',
+        provenance: {
+          origin: 'agent',
+          tool: 'a2ui.action',
+          confidence: 0.82,
+          timestamp: '2026-03-12T20:35:00.000Z'
+        }
+      }
+    }
+  );
+
+  const blocks = payload.screen?.blocks || [];
+  const provenance = blocks.find((block) => block.type === 'list' && String(block.title || '').toLowerCase() === 'action provenance');
+  assert.ok(provenance);
+  const provenanceItems = Array.isArray(provenance?.items) ? provenance.items.map((item) => String(item)) : [];
+  assert.equal(provenanceItems.some((item) => /initiator: agent/i.test(item)), true);
+  assert.equal(provenanceItems.some((item) => /source: a2ui.action/i.test(item)), true);
+
+  const controls = blocks.find((block) => block.type === 'section' && String(block.title || '').toLowerCase() === 'human controls');
+  assert.ok(controls);
+  const children = Array.isArray(controls?.children) ? controls.children : [];
+  const labels = children.map((child) => String((child as Record<string, unknown>).label || ''));
+  assert.equal(labels.includes('Resume task'), true);
+  assert.equal(labels.includes('Take over manually'), true);
+
+  const resumeButton = children.find((child) => String((child as Record<string, unknown>).label || '') === 'Resume task') as Record<string, any>;
+  assert.deepEqual(resumeButton.action.control, { signal: 'resume' });
+  assert.deepEqual(resumeButton.action.resume, { interrupt_id: 'interrupt_42', resume_token: 'resume_42' });
+});
