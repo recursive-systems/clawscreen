@@ -13,6 +13,16 @@ import { renderNode } from './render/registry';
 import { applyEnvelopeBatch } from './protocol/applyMessages';
 import { unwrapA2uiPayload } from './protocol/unwrapPayload';
 import { composeHudPayload } from './protocol/hudComposer';
+import {
+  createProfile as createSavedProfile,
+  describeProfilePrompt,
+  describeProfileRefresh,
+  formatProfileUpdatedAt,
+  nextProfileName as getNextProfileName,
+  sanitizeLoadedProfile as sanitizeStoredProfile,
+  sanitizeProfileName,
+  type ScreenProfile
+} from './profiles';
 
 const APP_VERSION = 'clawscreen-v1';
 const A2UI_ENDPOINT_CANDIDATES = ['/a2ui/generate', `${window.location.protocol}//${window.location.hostname}:18841/a2ui/generate`];
@@ -29,16 +39,6 @@ const KIOSK_IDLE_RETURN_MS = 45000;
 const HEALTH_POLL_INTERVAL_MS = 30000;
 const FRESH_DATA_MS = 5 * 60 * 1000;
 const STALE_DATA_MS = 15 * 60 * 1000;
-
-type ScreenProfile = {
-  id: string;
-  name: string;
-  lastPrompt: string;
-  lastPayload: A2UICompatiblePayload | null;
-  updatedAt: string;
-  refreshIntervalSec?: number;
-  autoRefreshEnabled?: boolean;
-};
 
 type Primitive = string | number | boolean | null | undefined;
 
@@ -112,6 +112,7 @@ const els = {
   openProfileManagerBtn: document.getElementById('openProfileManagerBtn') as HTMLButtonElement,
   profileManagerDialog: document.getElementById('profileManagerDialog') as HTMLDialogElement,
   profileManagerCloseBtn: document.getElementById('profileManagerCloseBtn') as HTMLButtonElement,
+  profileManagerDetail: document.getElementById('profileManagerDetail') as HTMLElement,
   saveProfileBtn: document.getElementById('saveProfileBtn') as HTMLButtonElement,
   renameProfileBtn: document.getElementById('renameProfileBtn') as HTMLButtonElement,
   deleteProfileBtn: document.getElementById('deleteProfileBtn') as HTMLButtonElement,
@@ -525,51 +526,34 @@ function loadLkg(): A2UICompatiblePayload | null {
   }
 }
 
+function makeProfileId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}`;
+}
+
 function createProfile(name: string, lastPrompt = state.lastPrompt, payload: A2UICompatiblePayload | null = state.lastPayload): ScreenProfile {
-  return {
-    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}`,
-    name: sanitizeProfileName(name),
-    lastPrompt: String(lastPrompt || '').slice(0, MAX_PROMPT_LENGTH),
-    lastPayload: payload,
-    updatedAt: nowIso(),
-    refreshIntervalSec: 60,
-    autoRefreshEnabled: false
-  };
+  return createSavedProfile({
+    id: makeProfileId(),
+    name,
+    nowIso: nowIso(),
+    lastPrompt,
+    payload
+  });
 }
 
 function nextProfileName(base = 'Saved screen'): string {
-  const existing = new Set(state.profiles.map((profile) => profile.name.trim().toLowerCase()));
-  for (let index = 1; index <= 999; index += 1) {
-    const candidate = `${base} ${index}`;
-    if (!existing.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${base} ${Date.now()}`;
+  return getNextProfileName(state.profiles, base);
 }
 
 function persistProfiles() {
   localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify({ profiles: state.profiles, activeProfileId: state.activeProfileId }));
 }
 
-function sanitizeProfileName(input: unknown): string {
-  const name = String(input || '').trim().replace(/\s+/g, ' ').slice(0, 48);
-  return name || 'Saved screen';
-}
-
 function sanitizeLoadedProfile(candidate: unknown): ScreenProfile | null {
-  if (!isRecord(candidate)) return null;
-  const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `profile-${Date.now()}`);
-  const lastPromptRaw = typeof candidate.lastPrompt === 'string' ? candidate.lastPrompt : '';
-  const lastPrompt = lastPromptRaw.slice(0, MAX_PROMPT_LENGTH);
-  const lastPayload = candidate.lastPayload ?? null;
-  return {
-    id,
-    name: sanitizeProfileName(candidate.name),
-    lastPrompt,
-    lastPayload: lastPayload && isSafePayload(lastPayload) ? (lastPayload as A2UICompatiblePayload) : null,
-    updatedAt: typeof candidate.updatedAt === 'string' && candidate.updatedAt ? candidate.updatedAt : nowIso(),
-    refreshIntervalSec: [30, 60, 120, 300].includes(Number(candidate.refreshIntervalSec)) ? Number(candidate.refreshIntervalSec) : 60,
-    autoRefreshEnabled: Boolean(candidate.autoRefreshEnabled)
-  };
+  return sanitizeStoredProfile(candidate, {
+    fallbackId: makeProfileId(),
+    nowIso: nowIso(),
+    isSafePayload
+  });
 }
 
 function loadProfiles() {
@@ -629,6 +613,37 @@ function persistCurrentRenderModel() {
   }));
 }
 
+function renderProfileManagerDetail() {
+  const active = getActiveProfile();
+  const total = state.profiles.length;
+  const hasSavedView = Boolean(active.lastPayload);
+
+  els.profileManagerDetail.innerHTML = `
+    <article class="profile-detail-card">
+      <div class="profile-detail-topline">
+        <p class="label">Active screen</p>
+        <span class="profile-detail-count">${total} saved</span>
+      </div>
+      <h4>${escapeHtml(active.name)}</h4>
+      <div class="profile-detail-meta">
+        <span>${escapeHtml(formatProfileUpdatedAt(active.updatedAt))}</span>
+        <span>${escapeHtml(describeProfileRefresh(active))}</span>
+        <span>${hasSavedView ? 'Saved view ready' : 'Waiting for first saved view'}</span>
+      </div>
+      <div class="profile-detail-grid">
+        <article>
+          <p class="label">Prompt</p>
+          <p>${escapeHtml(describeProfilePrompt(active))}</p>
+        </article>
+        <article>
+          <p class="label">Quick hint</p>
+          <p>${hasSavedView ? 'Use Refresh this screen to re-run the saved prompt without changing tabs.' : 'Run a prompt once, then save this screen for quick switching later.'}</p>
+        </article>
+      </div>
+    </article>
+  `;
+}
+
 function renderProfileTabs() {
   const renderInto = (container: HTMLElement, baseClass: string) => {
     container.innerHTML = '';
@@ -661,6 +676,7 @@ function renderProfileTabs() {
     els.profileSelect.appendChild(option);
   });
   els.profileSelect.disabled = state.isSubmitting;
+  renderProfileManagerDetail();
 }
 
 function focusProfileTab(profileId: string) {

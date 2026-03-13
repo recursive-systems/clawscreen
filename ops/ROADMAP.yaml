@@ -3,6 +3,18 @@ product: ClawScreen
 north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
+  - date: 2026-03-13
+    change: Completed UX-003 saved screens and profile tabs with persistence hardening, per-profile manager details, and verified refresh cadence behavior
+    rationale: ClawScreen now treats saved views as a reliable first-class workflow instead of a lightweight tab strip, making profile switching, saved prompt recall, and auto-refresh settings clearer and safer for daily use.
+  - date: 2026-03-13
+    change: Completed TRUST-002 action provenance and human-control affordances with visible per-action provenance and live pause/resume/takeover controls in the main HUD
+    rationale: ClawScreen now exposes who initiated an action, where it came from, and gives operators first-class live controls without forcing them into debug-only flows, tightening trust UX during active runs.
+  - date: 2026-03-13
+    change: Completed INT-011 run timeline authority layer with mutation governance, trust gating, approval state, and deterministic downgrade plumbing
+    rationale: ClawScreen now enforces surface ownership and authority checks inside the run pipeline instead of relying on best-effort renderer behavior, which improves mixed-stream correctness and makes downgrade/approval decisions replayable.
+  - date: 2026-03-12
+    change: Added INT-011 as P1/ready for run timeline authority, surface ownership, and deterministic downgrade governance
+    rationale: Latest deep research shows the strongest ecosystem movement is still in runtime correctness rather than fresh protocol churn; ClawScreen now needs a thin authority layer that enforces surface ownership, trust-tagged mutations, approval state, and capability downgrade behavior consistently across declarative UI, mixed streams, and screenshot/action backends.
   - date: 2026-03-11
     change: Completed TRUST-003 prompt-injection and high-impact action confirmation rail with user review dialog, pause/cancel/continue controls, and timeline receipts for approval decisions
     rationale: ClawScreen now distinguishes sensitive or untrusted screen-triggered actions before execution, gives the human a clear review checkpoint, and preserves approval/conflict context in the run timeline instead of treating trust decisions as invisible UI state.
@@ -115,8 +127,9 @@ backlog:
     lane: trust_ux
     title: Action provenance + human-control affordances
     priority: P0
-    status: ready
-    last_updated: 2026-03-01
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-13
     acceptance:
       - Display per-action provenance (initiator, tool/source, timestamp, confidence)
       - Provide explicit pause/resume/takeover controls on active tasks
@@ -175,8 +188,9 @@ backlog:
     lane: ui_polish
     title: Saved screens and profile tabs
     priority: P0
-    status: ready
-    last_updated: 2026-03-04
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-13
     acceptance:
       - Add ability to save named screens/profiles and switch via tabs
       - Persist profile definitions and current active tab locally
@@ -236,6 +250,20 @@ backlog:
       - Support XML-style or fenced payload delimiters without duplicating parser logic across transports
       - Preserve ordering so text chunks and ui_deltas replay identically in timeline views
       - Add fixtures/tests for mixed-stream happy path, malformed payload isolation, and downgrade-to-text behavior
+
+  - id: INT-011
+    lane: interaction
+    title: Run timeline authority layer for surface ownership, trust gating, and deterministic downgrade
+    priority: P1
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-13
+    acceptance:
+      - Enforce surface ownership and mutation authority so every ui_delta/action update is validated against runId, surfaceId, authorized owner, and schema before render
+      - Tag each mutation and action path with trustLevel, sourceKind, approvalState, and capabilitySnapshot so provenance and gating survive mixed declarative and screenshot/action flows
+      - Emit deterministic downgrade events when requested UI or action modes exceed client/backend capabilities, with safe continuation into minimal UI, text-plus-action, or screenshot/action fallback
+      - Record approvals, interrupts, ownership transfers, downgrade decisions, and executed action results in the append-only run timeline so replay reconstructs visible state and control flow exactly
+      - Add fixtures/tests covering unauthorized surface mutation rejection, approval-gated action flow, capability mismatch downgrade, and replay parity across mixed text+UI and screenshot/action runs
 
   - id: REL-003
     lane: reliability
