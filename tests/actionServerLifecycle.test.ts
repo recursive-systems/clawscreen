@@ -36,6 +36,40 @@ test.after(() => {
   if (server && !server.killed) server.kill('SIGTERM');
 });
 
+test('computer-use normalization route returns canonical batch + negotiation metadata', async () => {
+  const res = await fetch(`${base}/a2ui/computer-use/normalize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'openai',
+      domain: 'github.com',
+      turn: {
+        request: 'screenshot',
+        actions: [
+          { type: 'click', x: 120, y: 90 },
+          { type: 'zoom', zoomLevel: 1.5 }
+        ]
+      },
+      coordinateSpace: {
+        from: { width: 1000, height: 500 },
+        to: { width: 2000, height: 1000 }
+      },
+      safetyPolicy: {
+        allowedDomains: ['github.com'],
+        allowedActions: ['click', 'type', 'scroll', 'wait', 'screenshot'],
+        confirmationActions: ['click']
+      }
+    })
+  });
+  assert.equal(res.ok, true);
+  const payload = await res.json() as any;
+  assert.equal(payload.computerUse.kind, 'action_batch');
+  assert.equal(payload.computerUse.screenshot.mode, 'current');
+  assert.equal(payload.computerUse.capabilityNegotiation.downgradedActions.includes('zoom'), true);
+  assert.deepEqual(payload.computerUse.replay[0].mapped, { type: 'click', x: 240, y: 180 });
+  assert.equal(payload.computerUse.safety.requiresConfirmation, true);
+});
+
 test('action route supports pause control status', async () => {
   const res = await fetch(`${base}/a2ui/action`, {
     method: 'POST',

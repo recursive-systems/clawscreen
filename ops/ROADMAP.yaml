@@ -4,6 +4,9 @@ north_star: Agent-native HUD with trustworthy, adaptive, tool-backed UI
 
 recent_updates:
   - date: 2026-03-13
+    change: Completed INT-008 screenshot/action harness adapter with provider normalization, capability downgrade, coordinate remap, and safety policy receipts
+    rationale: ClawScreen can now normalize screenshot-first computer-use turns into one deterministic harness contract, replay batched actions against remapped coordinates, and expose confirmation/block decisions before risky automation proceeds.
+  - date: 2026-03-13
     change: Completed UX-003 saved screens and profile tabs with persistence hardening, per-profile manager details, and verified refresh cadence behavior
     rationale: ClawScreen now treats saved views as a reliable first-class workflow instead of a lightweight tab strip, making profile switching, saved prompt recall, and auto-refresh settings clearer and safer for daily use.
   - date: 2026-03-13
@@ -214,8 +217,9 @@ backlog:
     lane: interaction
     title: Screenshot/action harness adapter for computer-use backends
     priority: P0
-    status: ready
-    last_updated: 2026-03-08
+    status: done
+    owner: clawscreen-product
+    last_updated: 2026-03-13
     acceptance:
       - Normalize screenshot-request and batched UI action execution loop across supported providers
       - Support screenshot-first turns and deterministic replay of action arrays before next capture

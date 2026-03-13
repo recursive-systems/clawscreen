@@ -16,6 +16,7 @@ import { replayRunEvents } from '../shared/runReplay.js';
 import { createOpenClawGateway, getOpenClawGatewayConfigFromEnv } from './adapters/openclawGateway.js';
 import { createRunTimelineStore } from './runTimeline.js';
 import { applyGenerationGuardrails } from './generationGuardrails.js';
+import { normalizeHarnessTurn } from '../shared/computerUse.js';
 
 const PORT = Number(process.env.A2UI_PORT || 18841);
 const HOST = process.env.A2UI_HOST || '0.0.0.0';
@@ -29,7 +30,7 @@ const advertisedCapabilities = capabilitiesFromA2UI({
   messageTypes: getA2UICapabilities().messageTypes.canonical,
   payloadLimitKb: 256,
   interrupts: true,
-  screenshot: false
+  screenshot: true
 });
 
 const app = express();
@@ -48,7 +49,29 @@ app.get('/healthz', (_req: Request, res: Response) => {
 });
 
 app.get('/a2ui/capabilities', (_req: Request, res: Response) => {
-  res.json({ ok: true, capabilities: getA2UICapabilities() });
+  res.json({ ok: true, capabilities: getA2UICapabilities(), computerUse: {
+    screenshot: true,
+    actions: ['click', 'type', 'scroll', 'wait', 'screenshot'],
+    optionalActions: ['zoom'],
+    maxActionsPerTurn: 6,
+    toolVersion: 'clawscreen-harness-v1'
+  } });
+});
+
+app.post('/a2ui/computer-use/normalize', (req: Request, res: Response) => {
+  const provider = String(req.body?.provider || 'generic').trim() || 'generic';
+  const toolVersion = typeof req.body?.toolVersion === 'string' ? req.body.toolVersion : undefined;
+  const domain = typeof req.body?.domain === 'string' ? req.body.domain : undefined;
+  const turn = req.body?.turn ?? req.body;
+
+  const normalized = normalizeHarnessTurn({ provider, toolVersion, domain, turn }, {
+    requestedCapabilities: req.body?.requestedCapabilities,
+    supportedCapabilities: req.body?.supportedCapabilities,
+    safetyPolicy: req.body?.safetyPolicy,
+    coordinateSpace: req.body?.coordinateSpace
+  });
+
+  res.json({ ok: true, computerUse: normalized });
 });
 
 app.get('/a2ui/runs/:runId', (req: Request, res: Response) => {
